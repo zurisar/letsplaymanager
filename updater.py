@@ -30,6 +30,15 @@ def apply_migrations(db_path, old_version, new_version):
             
         # В будущем здесь будут блоки: if old_version < "0.4": ...
 
+        # --- МИГРАЦИЯ ДО ВЕРСИИ 0.4 ---
+        if old_version < "0.4":
+            logging.info(f"Запуск обновления БД: с {old_version} до 0.4...")
+            cursor.execute("PRAGMA table_info(episodes)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "publish_date" not in columns:
+                cursor.execute("ALTER TABLE episodes ADD COLUMN publish_date TEXT DEFAULT ''")
+            conn.commit()
+
     except Exception as e:
         logging.error(f"Критическая ошибка при обновлении БД: {e}")
         conn.rollback() # Откатываем изменения в случае сбоя

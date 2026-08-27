@@ -18,12 +18,13 @@ from PyQt6.QtGui import QColor
 from database import (init_db, add_game, get_games, add_episode_if_not_exists, 
                       get_episodes, get_uploads, toggle_upload, update_episode_metadata,
                       get_videohostings, update_episode_title, get_upload_url,
-                      add_videohosting, delete_videohosting, update_game_ai_url) # <--- Добавили
+                      add_videohosting, delete_videohosting, update_game_ai_url,
+                      update_episode_publish_date) # <--- Добавили
 
 import updater # <--- Импортируем наш новый модуль обновлений
 from database import DB_NAME, APP_DATA_DIR # Берем пути из базы
 
-APP_VERSION = "0.3" # <--- ТЕКУЩАЯ ВЕРСИЯ ПРИЛОЖЕНИЯ
+APP_VERSION = "0.4" # <--- ТЕКУЩАЯ ВЕРСИЯ ПРИЛОЖЕНИЯ
 
 # Конфиг теперь тоже живет в AppData, чтобы не стираться при обновлении
 CONFIG_FILE = os.path.join(APP_DATA_DIR, 'config.json')
@@ -527,8 +528,9 @@ class AddGameDialog(QDialog):
                 self.folder_input.clear()
 
 class AddEpisodeDialog(QDialog):
-    def __init__(self, parent, games, current_game_id):
+    def __init__(self, parent, games, current_game_id, config): # <-- Добавили config
         super().__init__(parent)
+        self.config = config # <-- Сохранили
         self.setWindowTitle(f"{_('title_add_episode')} (MKV -> MP4)")
         self.resize(500, 200)
 
@@ -585,8 +587,8 @@ class AddEpisodeDialog(QDialog):
         layout.addRow(btn_layout)
 
     def select_file(self):
-        # Окно выбора файла (фильтруем только видео)
-        file, ignored = QFileDialog.getOpenFileName(self, _("dlg_select_source_video"), "", f"{_('filter_video_files')} (*.mkv *.mp4 *.avi)")
+        start_dir = self.config.get("recordings_folder", "") # <-- Берем папку
+        file, ignored = QFileDialog.getOpenFileName(self, "Выберите исходное видео", start_dir, "Видеофайлы (*.mkv *.mp4 *.avi)")
         if file:
             self.file_input.setText(file)
             if file.lower().endswith('.mp4'):
@@ -614,8 +616,9 @@ class AddEpisodeDialog(QDialog):
             self.ep_spinbox.setValue(1)
 
 class CompressDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent, config): # <-- Добавили config
         super().__init__(parent)
+        self.config = config
         self.setWindowTitle("Сжатие видео (Transcoding)")
         self.resize(500, 250)
         
@@ -679,7 +682,8 @@ class CompressDialog(QDialog):
         layout.addRow(btn_layout)
 
     def select_file(self):
-        file, _ = QFileDialog.getOpenFileName(self, _("dlg_select_source_video"), "", f"{_('filter_video_files')} (*.mkv *.mp4 *.avi)")
+        start_dir = self.config.get("recordings_folder", "") # <-- Берем папку
+        file, ignored = QFileDialog.getOpenFileName(self, _("dlg_select_source_video"), "", f"{_('filter_video_files')} (*.mkv *.mp4 *.avi)")
         if file:
             self.filepath = file
             self.file_input.setText(file)
@@ -783,6 +787,7 @@ class LetsPlayManager(QMainWindow):
         # --- 2. Центральная часть (Таблица эпизодов) ---
         # 0 строк (пока пустая), 7 столбцов
         self.table = QTableWidget(0, 7)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers) # <--- БЛОКИРУЕМ СТАНДАРТНОЕ РЕДАКТИРОВАНИЕ
         self.table.setHorizontalHeaderLabels([
             _("col_episode"), _("col_size"), _("col_time"), 
             _("col_desc"), _("col_preview"), "YouTube", "RuTube"
@@ -820,29 +825,6 @@ class LetsPlayManager(QMainWindow):
         if not self.config.get("renders_folder") or not self.config.get("recordings_folder"):
             QMessageBox.information(self, "Настройка", "Пожалуйста, укажите базовые папки для записей и рендеров.")
             self.open_settings()
-
-    def on_cell_double_clicked(self, row, column):
-        """Редактирование кастомного названия эпизода по двойному клику в нулевом столбце (Пункт 5)"""
-        if column == 0:
-            item = self.table.item(row, column)
-            if not item:
-                return
-            
-            ep_id = item.data(Qt.ItemDataRole.UserRole)
-            current_title = item.data(Qt.ItemDataRole.UserRole + 1) or ""
-            ep_number = item.data(Qt.ItemDataRole.UserRole + 2)
-
-            new_title, ok = QInputDialog.getText(
-                self, 
-                _("lbl_episode_title"), 
-                f"_('lbl_enter_episode_title') {ep_number} _('lbl_eg_episode_title'):", 
-                QLineEdit.EchoMode.Normal, 
-                current_title
-            )
-            
-            if ok:
-                update_episode_title(ep_id, new_title.strip())
-                self.update_table()
 
     def open_url_dialog(self, episode_id, hosting_id, hosting_name):
         """Всплывающее окно для ввода ссылки на видео (Пункт 7)"""
@@ -922,7 +904,7 @@ class LetsPlayManager(QMainWindow):
             self.update_table() # Обновляем таблицу, чтобы строки стали голубыми
 
     def show_compress_dialog(self):
-        dialog = CompressDialog(self)
+        dialog = CompressDialog(self, self.config)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             input_file = dialog.filepath
             # Забираем кодек и число битрейта
@@ -970,7 +952,7 @@ class LetsPlayManager(QMainWindow):
         current_game_id = current_game_data['id']
 
         # Создаем и показываем наше окно
-        dialog = AddEpisodeDialog(self, games, current_game_id)
+        dialog = AddEpisodeDialog(self, games, current_game_id, self.config)
         
         # Если пользователь нажал "Добавить и Конвертировать"
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -1079,9 +1061,9 @@ class LetsPlayManager(QMainWindow):
             self.game_selector.setCurrentIndex(self.game_selector.count() - 1)
 
     def on_cell_double_clicked(self, row, column):
-        """Редактирование кастомного названия эпизода по двойному клику в нулевом столбце (Пункт 5)"""
+        # Столбец 0: Редактирование кастомного названия эпизода
         if column == 0:
-            item = self.table.item(row, column)
+            item = self.table.item(row, 0)
             if not item:
                 return
             
@@ -1091,14 +1073,32 @@ class LetsPlayManager(QMainWindow):
 
             new_title, ok = QInputDialog.getText(
                 self, 
-                _("lbl_episode_tit"), 
-                f"{_('lbl_enter_episode_title')} {ep_number} {_('lbl_eg_episode_title')}:", 
+                _("lbl_episode_title", _("lbl_episode_title")), 
+                f"{_('lbl_enter_episode_title')} {ep_number}:", 
                 QLineEdit.EchoMode.Normal, 
                 current_title
             )
             
             if ok:
                 update_episode_title(ep_id, new_title.strip())
+                self.update_table()
+
+        # Столбец 6: Редактирование даты публикации
+        elif column == 6:
+            ep_id = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            current_date = self.table.item(row, 6).text()
+            if current_date == "Не задана":
+                current_date = ""
+
+            new_date, ok = QInputDialog.getText(
+                self, _("lbl_publishing_date"), 
+                _("lbl_enter_publish_date"), 
+                QLineEdit.EchoMode.Normal, 
+                current_date
+            )
+            
+            if ok:
+                update_episode_publish_date(ep_id, new_date.strip())
                 self.update_table()
 
     def handle_ai_btn_click(self):
@@ -1150,7 +1150,7 @@ class LetsPlayManager(QMainWindow):
         # Добавили новую колонку "Медиа" (Индекс 3)
         headers = [
             _("col_episode"), _("col_size"), _("col_time"), "Медиа", 
-            _("col_desc"), _("col_preview")
+            _("col_desc"), _("col_preview"), _("col_publish_date")
         ]
         for h_id, h_key, h_display_name in hostings:
             headers.append(h_display_name)
@@ -1168,10 +1168,15 @@ class LetsPlayManager(QMainWindow):
                         add_episode_if_not_exists(game_id, ep_number)
 
         episodes = get_episodes(game_id)
+
+        # --- ДОБАВЛЯЕМ ЭТУ СТРОКУ ---
+        self.table.clearContents() # Жестко стираем все старые ячейки перед отрисовкой новых
+        # ----------------------------
+
         self.table.setRowCount(len(episodes))
 
         for row_idx, ep in enumerate(episodes):
-            ep_id, ep_number, ep_title, db_size, db_duration = ep
+            ep_id, ep_number, ep_title, db_size, db_duration, pub_date = ep
             ep_folder = os.path.join(folder_path, f"ep{ep_number}")
             folder_exists = os.path.exists(ep_folder)
 
@@ -1278,14 +1283,34 @@ class LetsPlayManager(QMainWindow):
                 prev_btn.clicked.connect(lambda checked, p=prev_path: self.open_gimp(p))
                 self.table.setCellWidget(row_idx, 5, prev_btn)
 
+                pub_item = QTableWidgetItem(pub_date if pub_date else "Не задана")
+                if not folder_exists:
+                    pub_item.setBackground(QColor("#add8e6"))
+                self.table.setItem(row_idx, 6, pub_item)
+
             else:
-                self.table.setItem(row_idx, 1, QTableWidgetItem(db_size if db_size and db_size != '0' else "Удалено")) 
-                self.table.setItem(row_idx, 2, QTableWidgetItem(db_duration if db_duration and db_duration != '0' else "-"))
-                self.table.setItem(row_idx, 3, QTableWidgetItem("-")) # Медиа
-                self.table.setItem(row_idx, 4, QTableWidgetItem(_("status_files_deleted")))
-                self.table.setItem(row_idx, 5, QTableWidgetItem(_("status_files_deleted")))          
+                # Создаем элементы
+                size_item = QTableWidgetItem(db_size if db_size and db_size != '0' else _("lbl_deleted"))
+                dur_item = QTableWidgetItem(db_duration if db_duration and db_duration != '0' else "-")
+                media_item = QTableWidgetItem("-")
+                desc_item = QTableWidgetItem(_("lbl_deleted"))
+                prev_item = QTableWidgetItem(_("lbl_deleted"))
+                
+                # ДОБАВЛЕНО: Создаем элемент даты для удаленных папок
+                pub_item = QTableWidgetItem(pub_date if pub_date else _("lbl_not_set"))
+
+                # Красим их ВСЕ в голубой
+                for it in (size_item, dur_item, media_item, desc_item, prev_item, pub_item):
+                    it.setBackground(QColor("#add8e6"))
+
+                self.table.setItem(row_idx, 1, size_item)
+                self.table.setItem(row_idx, 2, dur_item)
+                self.table.setItem(row_idx, 3, media_item)
+                self.table.setItem(row_idx, 4, desc_item)
+                self.table.setItem(row_idx, 5, prev_item)
+                self.table.setItem(row_idx, 6, pub_item) # <--- ОБЯЗАТЕЛЬНО ПЕРЕЗАПИСЫВАЕМ СТОЛБЕЦ 6      
             
-            # --- ДИНАМИЧЕСКИЕ СТОЛБЦЫ И ССЫЛКИ (Индексы сместились на 6 + col_offset) ---
+            # --- ДИНАМИЧЕСКИЕ СТОЛБЦЫ И ССЫЛКИ (Индексы сместились на 7 + col_offset) ---
             uploads = get_uploads(ep_id) 
             
             for col_offset, (h_id, h_key, h_display_name) in enumerate(hostings):
@@ -1323,7 +1348,7 @@ class LetsPlayManager(QMainWindow):
                 cell_layout.addWidget(link_open_btn)
                 cell_layout.addStretch()
                 
-                self.table.setCellWidget(row_idx, 6 + col_offset, cell_widget)
+                self.table.setCellWidget(row_idx, 7 + col_offset, cell_widget)
 
     def open_notepad(self, file_path):
         if not os.path.exists(file_path):

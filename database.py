@@ -109,8 +109,8 @@ def add_episode_if_not_exists(game_id, number):
 def get_episodes(game_id):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    # Теперь подтягиваем из базы еще и title (кастомное название эпизода)
-    cursor.execute('SELECT id, number, title, file_size, duration FROM episodes WHERE game_id = ? ORDER BY number', (game_id,))
+    # Добавили publish_date
+    cursor.execute('SELECT id, number, title, file_size, duration, publish_date FROM episodes WHERE game_id = ? ORDER BY number', (game_id,))
     episodes = cursor.fetchall()
     conn.close()
     return episodes
@@ -120,6 +120,13 @@ def update_episode_title(episode_id, title):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('UPDATE episodes SET title = ? WHERE id = ?', (title, episode_id))
+    conn.commit()
+    conn.close()
+
+def update_episode_publish_date(episode_id, date_str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE episodes SET publish_date = ? WHERE id = ?', (date_str, episode_id))
     conn.commit()
     conn.close()
 
