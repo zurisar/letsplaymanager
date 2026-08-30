@@ -27,7 +27,7 @@ from database import (init_db, add_game, get_games, add_episode_if_not_exists,
 import updater # <--- Импортируем наш новый модуль обновлений
 from database import DB_NAME, APP_DATA_DIR # Берем пути из базы
 
-APP_VERSION = "0.5" # <--- ТЕКУЩАЯ ВЕРСИЯ ПРИЛОЖЕНИЯ
+APP_VERSION = "0.5.1" # <--- ТЕКУЩАЯ ВЕРСИЯ ПРИЛОЖЕНИЯ
 
 # Конфиг теперь тоже живет в AppData, чтобы не стираться при обновлении
 CONFIG_FILE = os.path.join(APP_DATA_DIR, 'config.json')
@@ -876,8 +876,8 @@ class ShortsManagerDialog(QDialog):
             self.table.setItem(row, 5, QTableWidgetItem(s_pub if s_pub else _("lbl_not_set")))
             
             # Хостинги
-            uploads = {u[0]: u[2] for u in get_short_uploads(s_id)}
-            for col_off, (h_id, _, h_name) in enumerate(self.hostings):
+            uploads = {int(u[0]): u[2] for u in get_short_uploads(s_id)}
+            for col_off, (h_id, ignored, h_name) in enumerate(self.hostings):
                 hw = QWidget()
                 hl = QHBoxLayout(hw)
                 hl.setContentsMargins(2,2,2,2)
@@ -910,14 +910,14 @@ class ShortsManagerDialog(QDialog):
 
     def add_short(self):
         start_dir = self.config.get("renders_folder", "")
-        file, _ = QFileDialog.getOpenFileName(self, _("lbl_select_short"), start_dir, f"{_('lbl_video_files')} (*.mp4 *.mkv)")
+        file, ignored = QFileDialog.getOpenFileName(self, _("lbl_select_short"), start_dir, f"{_('lbl_video_files')} (*.mp4 *.mkv)")
         if not file: return
         
         os.makedirs(self.shorts_folder, exist_ok=True)
         shorts = get_shorts(self.ep_id)
         next_num = max([s[1] for s in shorts] + [0]) + 1
         
-        _, ext = os.path.splitext(file)
+        filename, ext = os.path.splitext(file)
         out_name = f"{self.game_name} - Ep.{self.ep_number} - Short {next_num}{ext}"
         out_path = os.path.join(self.shorts_folder, out_name)
         

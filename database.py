@@ -301,29 +301,31 @@ def get_short_uploads(short_id):
     conn.close()
     return uploads
 
-def update_short_upload_status(short_id, videohosting_id, is_uploaded):
+def update_short_upload_status(short_id, hosting_id, status):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute('SELECT 1 FROM shorts_uploads WHERE short_id = ? AND videohosting_id = ?', (short_id, videohosting_id))
-    if cursor.fetchone():
-        cursor.execute('UPDATE shorts_uploads SET is_uploaded = ? WHERE short_id = ? AND videohosting_id = ?', 
-                       (is_uploaded, short_id, videohosting_id))
+    
+    if status == 1:
+        # Используем правильное имя колонки: videohosting_id
+        cursor.execute('SELECT 1 FROM shorts_uploads WHERE short_id = ? AND videohosting_id = ?', (short_id, hosting_id))
+        if not cursor.fetchone():
+            cursor.execute('INSERT INTO shorts_uploads (short_id, videohosting_id, url) VALUES (?, ?, "")', (short_id, hosting_id))
     else:
-        cursor.execute('INSERT INTO shorts_uploads (short_id, videohosting_id, is_uploaded) VALUES (?, ?, ?)', 
-                       (short_id, videohosting_id, is_uploaded))
+        cursor.execute('DELETE FROM shorts_uploads WHERE short_id = ? AND videohosting_id = ?', (short_id, hosting_id))
+        
     conn.commit()
     conn.close()
 
-def update_short_url(short_id, videohosting_id, url):
+def update_short_url(short_id, hosting_id, url):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute('SELECT 1 FROM shorts_uploads WHERE short_id = ? AND videohosting_id = ?', (short_id, videohosting_id))
+    
+    cursor.execute('SELECT 1 FROM shorts_uploads WHERE short_id = ? AND videohosting_id = ?', (short_id, hosting_id))
     if cursor.fetchone():
-        cursor.execute('UPDATE shorts_uploads SET url = ? WHERE short_id = ? AND videohosting_id = ?', 
-                       (url, short_id, videohosting_id))
+        cursor.execute('UPDATE shorts_uploads SET url = ? WHERE short_id = ? AND videohosting_id = ?', (url, short_id, hosting_id))
     else:
-        cursor.execute('INSERT INTO shorts_uploads (short_id, videohosting_id, is_uploaded, url) VALUES (?, ?, 0, ?)', 
-                       (short_id, videohosting_id, url))
+        cursor.execute('INSERT INTO shorts_uploads (short_id, videohosting_id, url) VALUES (?, ?, ?)', (short_id, hosting_id, url))
+        
     conn.commit()
     conn.close()
 
