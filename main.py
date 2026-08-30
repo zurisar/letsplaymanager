@@ -8,8 +8,8 @@ import subprocess
 import math
 import shutil
 import webbrowser
-from PyQt6.QtCore import QThread, pyqtSignal, Qt
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QDate # <--- Добавлен QDate
+from PyQt6.QtWidgets import (QApplication, QCalendarWidget, QMainWindow, QMenu, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
                              QComboBox, QLabel, QHeaderView, QFileDialog, QInputDialog, 
                              QCheckBox, QDialog, QFormLayout, QSpinBox, QLineEdit, QMessageBox,
@@ -19,12 +19,15 @@ from database import (init_db, add_game, get_games, add_episode_if_not_exists,
                       get_episodes, get_uploads, toggle_upload, update_episode_metadata,
                       get_videohostings, update_episode_title, get_upload_url,
                       add_videohosting, delete_videohosting, update_game_ai_url,
-                      update_episode_publish_date) # <--- Добавили
+                      update_episode_publish_date, update_upload_url, mark_episode_deleted,
+                      get_shorts, add_short_to_db, update_short_field, get_short_uploads,
+                      update_short_upload_status, update_short_url, delete_game_full,
+                      update_game)
 
 import updater # <--- Импортируем наш новый модуль обновлений
 from database import DB_NAME, APP_DATA_DIR # Берем пути из базы
 
-APP_VERSION = "0.4" # <--- ТЕКУЩАЯ ВЕРСИЯ ПРИЛОЖЕНИЯ
+APP_VERSION = "0.5" # <--- ТЕКУЩАЯ ВЕРСИЯ ПРИЛОЖЕНИЯ
 
 # Конфиг теперь тоже живет в AppData, чтобы не стираться при обновлении
 CONFIG_FILE = os.path.join(APP_DATA_DIR, 'config.json')
@@ -75,7 +78,8 @@ def load_config():
         "desc_name": "desc.txt",
         "preview_name": "preview.jpg",
         "recordings_folder": "", # Новое: Папка, куда пишет OBS
-        "renders_folder": ""     # Новое: Папка, где лежат папки с играми
+        "renders_folder": "",     # Новое: Папка, где лежат папки с играми
+        "video_editor_path": "" # Новое: видеоредактор
     }
     
     if not os.path.exists(CONFIG_FILE):
@@ -147,17 +151,15 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(_("title_settings"))
         self.resize(500, 150)
-        self.config = config # Получаем текущий конфиг
+        self.config = config
 
         layout = QFormLayout(self)
 
-        # --- НОВОЕ: Выбор языка ---
+        # --- Выбор языка ---
         self.lang_selector = QComboBox()
-        # Добавляем языки (userData будет хранить код файла)
         self.lang_selector.addItem("Русский", userData="ru_ru")
         self.lang_selector.addItem("English", userData="en_us")
         
-        # Устанавливаем текущий язык из конфига
         current_lang = self.config.get("language", "ru_ru")
         index = self.lang_selector.findData(current_lang)
         if index >= 0:
@@ -165,7 +167,7 @@ class SettingsDialog(QDialog):
             
         layout.addRow("Язык / Language:", self.lang_selector)
 
-        # --- НОВЫЕ ПАПКИ ---
+        # --- ПАПКИ ---
         recordings_layout = QHBoxLayout()
         self.recordings_input = QLineEdit(self.config.get("recordings_folder", ""))
         rec_btn = QPushButton(_("btn_browse", "Обзор"))
@@ -182,14 +184,14 @@ class SettingsDialog(QDialog):
         renders_layout.addWidget(ren_btn)
         layout.addRow(_("lbl_video_render_folder"), renders_layout)
 
-        # 1. Путь к Текстовому редактору
-        editor_layout = QHBoxLayout()
-        self.editor_input = QLineEdit(self.config.get("notepad_path", "notepad.exe"))
-        editor_btn = QPushButton(_("btn_browse"))
-        editor_btn.clicked.connect(self.browse_editor)
-        editor_layout.addWidget(self.editor_input)
-        editor_layout.addWidget(editor_btn)
-        layout.addRow(_("lbl_text_editor"), editor_layout)
+        # 1. Путь к Текстовому редактору (переименовано в text_editor_input)
+        text_editor_layout = QHBoxLayout()
+        self.text_editor_input = QLineEdit(self.config.get("notepad_path", "notepad.exe"))
+        text_editor_btn = QPushButton(_("btn_browse"))
+        text_editor_btn.clicked.connect(self.browse_text_editor) # <--- Уникальный метод
+        text_editor_layout.addWidget(self.text_editor_input)
+        text_editor_layout.addWidget(text_editor_btn)
+        layout.addRow(_("lbl_text_editor"), text_editor_layout)
 
         # 2. Путь к GIMP
         gimp_layout = QHBoxLayout()
@@ -200,6 +202,15 @@ class SettingsDialog(QDialog):
         gimp_layout.addWidget(gimp_btn)
         layout.addRow(_("lbl_gimp_path"), gimp_layout)
 
+        # --- Видеоредактор (переименовано в video_editor_input) ---
+        video_editor_layout = QHBoxLayout()
+        self.video_editor_input = QLineEdit(self.config.get("video_editor_path", ""))
+        video_editor_btn = QPushButton("Обзор")
+        video_editor_btn.clicked.connect(self.browse_video_editor) # <--- Уникальный метод
+        video_editor_layout.addWidget(self.video_editor_input)
+        video_editor_layout.addWidget(video_editor_btn)
+        layout.addRow(f"{_('lbl_videoeditor')} (.exe):", video_editor_layout)
+
         # 3. Имена файлов
         self.desc_input = QLineEdit(self.config.get("desc_name", "desc.txt"))
         layout.addRow(_("lbl_desc_filename"), self.desc_input)
@@ -208,7 +219,7 @@ class SettingsDialog(QDialog):
         layout.addRow(_("lbl_preview_filename"), self.prev_input)
 
         # --- Кнопка управления видеохостингами ---
-        hostings_btn = QPushButton("Управление видеохостингами (YouTube, VK, RuTube и др.)")
+        hostings_btn = QPushButton(_("btn_videohosting_manager"))
         hostings_btn.clicked.connect(self.open_manage_hostings)
         layout.addRow(hostings_btn)
 
@@ -223,15 +234,22 @@ class SettingsDialog(QDialog):
         btn_layout.addWidget(cancel_btn)
         layout.addRow(btn_layout)
 
+    # --- МЕТОДЫ ОБЗОРА (теперь у каждого свое имя) ---
+
     def browse_gimp(self):
         file, ignored = QFileDialog.getOpenFileName(self, _("title_select_gimp"), "", "Executable Files (*.exe)")
         if file:
             self.gimp_input.setText(file)
 
-    def browse_editor(self):
+    def browse_text_editor(self): # Для текстового редактора
         file, ignored = QFileDialog.getOpenFileName(self, _("title_select_editor"), "", "Executable Files (*.exe)")
         if file:
-            self.editor_input.setText(file)
+            self.text_editor_input.setText(file)
+
+    def browse_video_editor(self): # Для видеоредактора
+        file, ignored = QFileDialog.getOpenFileName(self, _("lbl_select_videoeditor_exe"), "", "Executable (*.exe)")
+        if file:
+            self.video_editor_input.setText(file)
 
     def open_manage_hostings(self):
         dialog = ManageHostingsDialog(self)
@@ -241,6 +259,26 @@ class SettingsDialog(QDialog):
         folder = QFileDialog.getExistingDirectory(self, _("lbl_select_folder"))
         if folder:
             line_edit.setText(folder)
+
+    def accept(self):
+        # 1. Собираем данные со всех полей интерфейса и обновляем словарь
+        self.config["language"] = self.lang_selector.currentData()
+        self.config["recordings_folder"] = self.recordings_input.text().strip()
+        self.config["renders_folder"] = self.renders_input.text().strip()
+        
+        self.config["notepad_path"] = self.text_editor_input.text().strip()
+        self.config["gimp_path"] = self.gimp_input.text().strip()
+        self.config["video_editor_path"] = self.video_editor_input.text().strip()
+        
+        self.config["desc_name"] = self.desc_input.text().strip()
+        self.config["preview_name"] = self.prev_input.text().strip()
+
+        # 2. Физически сохраняем обновленный словарь в файл config.json
+        # (Функция save_config уже должна быть у вас в main.py)
+        save_config(self.config)
+
+        # 3. Закрываем окно (вызываем оригинальный метод закрытия)
+        super().accept()
 
 class ManageHostingsDialog(QDialog):
     def __init__(self, parent):
@@ -325,87 +363,6 @@ class ManageHostingsDialog(QDialog):
         if reply == QMessageBox.StandardButton.Yes:
             delete_videohosting(h_id)
             self.load_data()
-
-class DeleteEpisodesDialog(QDialog):
-    def __init__(self, parent, game_id, folder_path, game_name):
-        super().__init__(parent)
-        global _
-        self.setWindowTitle(f"{_('title_delete_sources')}: {game_name}")
-        self.resize(400, 300)
-        
-        self.folder_path = folder_path
-        self.checkboxes = [] # Здесь будем хранить кортежи (чекбокс, путь_к_папке)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(_("lbl_select_episodes_to_delete")))
-
-        # Получаем эпизоды из БД
-        episodes = get_episodes(game_id)
-        
-        for ep in episodes:
-            ep_id, ep_number, ep_title, ignored1, ignored2 = ep # <--- Добавили ep_title
-            ep_folder = os.path.join(folder_path, f"ep{ep_number}")
-            
-            if os.path.exists(ep_folder):
-                display_text = f"{_('lbl_episode')} {ep_number}"
-                if ep_title: # <--- Если есть кастомное название, добавляем его
-                    display_text += f" {ep_title}"
-                cb = QCheckBox(display_text)
-                self.checkboxes.append((cb, ep_folder))
-                layout.addWidget(cb)
-
-        if not self.checkboxes:
-            layout.addWidget(QLabel(_("lbl_no_files_to_delete")))
-
-        layout.addStretch()
-
-        # Кнопки
-        btn_layout = QHBoxLayout()
-        self.del_btn = QPushButton(_("btn_delete_selected"))
-        self.del_btn.setStyleSheet("background-color: lightcoral; font-weight: bold;")
-        self.del_btn.clicked.connect(self.confirm_and_delete)
-        
-        cancel_btn = QPushButton(_('btn_cancel'))
-        cancel_btn.clicked.connect(self.reject)
-        
-        btn_layout.addWidget(self.del_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
-
-    def confirm_and_delete(self):
-        # Собираем папки, которые пользователь отметил галочкой
-        folders_to_delete = [folder for cb, folder in self.checkboxes if cb.isChecked()]
-        
-        if not folders_to_delete:
-            QMessageBox.information(self, _("msg_title_empty"), _("msg_no_episodes_selected"))
-            return
-
-        # ПЕРВОЕ ПОДТВЕРЖДЕНИЕ
-        reply1 = QMessageBox.question(
-            self, _("msg_title_confirmation"), 
-            f"{_('msg_confirm_delete_part1')} {len(folders_to_delete)} {_('msg_confirm_delete_part2')}", 
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply1 == QMessageBox.StandardButton.Yes:
-            # ВТОРОЕ (ФИНАЛЬНОЕ) ПОДТВЕРЖДЕНИЕ
-            reply2 = QMessageBox.warning(
-                self, _("msg_title_last_warning"), 
-                _("msg_permanent_delete_warning"), 
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            
-            if reply2 == QMessageBox.StandardButton.Yes:
-                # Безжалостно сносим папки
-                for folder in folders_to_delete:
-                    try:
-                        shutil.rmtree(folder)
-                        logging.info(f"{_('log_folder_deleted')}: {folder}")
-                    except Exception as e:
-                        logging.error(f"{_('log_error_deleting_folder')} {folder}: {e}")
-                
-                # Закрываем окно с успехом
-                self.accept()
 
 class FFmpegWorker(QThread):
     # Добавился новый сигнал progress, который будет отдавать строку текста
@@ -496,6 +453,11 @@ class AddGameDialog(QDialog):
         self.ai_url_input.setPlaceholderText("https://chatgpt.com/...")
         layout.addRow(_("lbl_ai_chat_link"), self.ai_url_input)
 
+        # --- НОВОЕ: Поле Steam ID ---
+        self.steam_input = QLineEdit()
+        self.steam_input.setPlaceholderText("Например: 108600 (Project Zomboid)")
+        layout.addRow("Steam ID (опционально):", self.steam_input)
+
         btn_layout = QHBoxLayout()
         save_btn = QPushButton(_("btn_save", "Сохранить"))
         save_btn.clicked.connect(self.accept)
@@ -527,6 +489,35 @@ class AddGameDialog(QDialog):
             else:
                 self.folder_input.clear()
 
+class EditGameDialog(QDialog):
+    def __init__(self, parent, game_name, game_data):
+        super().__init__(parent)
+        self.setWindowTitle(f"Редактирование: {game_name}")
+        self.resize(500, 150)
+        
+        layout = QFormLayout(self)
+
+        self.name_input = QLineEdit(game_name)
+        layout.addRow("Название игры:", self.name_input)
+
+        self.ai_url_input = QLineEdit(game_data.get('ai_url', ''))
+        self.ai_url_input.setPlaceholderText("https://chatgpt.com/...")
+        layout.addRow("Ссылка на ИИ-чат:", self.ai_url_input)
+
+        self.steam_input = QLineEdit(game_data.get('steam_id', ''))
+        self.steam_input.setPlaceholderText("Например: 108600")
+        layout.addRow("Steam ID:", self.steam_input)
+
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("💾 Сохранить изменения")
+        save_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Отмена")
+        cancel_btn.clicked.connect(self.reject)
+        
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addRow(btn_layout)
+
 class AddEpisodeDialog(QDialog):
     def __init__(self, parent, games, current_game_id, config): # <-- Добавили config
         super().__init__(parent)
@@ -550,7 +541,7 @@ class AddEpisodeDialog(QDialog):
         # 2. Выбор игры (копируем список из главного окна)
         self.game_selector = QComboBox()
         # Также добавляем ai_url в распаковку
-        for game_id, name, folder_path, ai_url in games:
+        for game_id, name, folder_path, ai_url, steam_id in games:
             self.game_selector.addItem(name, userData={'id': game_id, 'path': folder_path})
             # Сразу выбираем ту игру, которая была открыта в главном окне
             if game_id == current_game_id:
@@ -724,6 +715,302 @@ class CompressDialog(QDialog):
             total_size_mb = ((bitrate_mbps + audio_bitrate_mbps) * self.duration_sec) / 8
             self.estimate_label.setText(f"{_('lbl_maybe_weight')}: ~{total_size_mb:.2f} MB")
 
+class CalendarDialog(QDialog):
+    def __init__(self, parent, current_date_str=""):
+        super().__init__(parent)
+        self.setWindowTitle(_("lbl_publishing_date"))
+        self.resize(350, 250)
+        layout = QVBoxLayout(self)
+
+        self.calendar = QCalendarWidget()
+        self.calendar.setGridVisible(True)
+        
+        # Если дата уже была, выделяем её в календаре
+        if current_date_str and current_date_str != _("lbl_not_set"):
+            try:
+                d = QDate.fromString(current_date_str, "dd.MM.yyyy")
+                if d.isValid():
+                    self.calendar.setSelectedDate(d)
+            except:
+                pass
+        
+        layout.addWidget(self.calendar)
+
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton(_("btn_save"))
+        save_btn.clicked.connect(self.accept)
+        clear_btn = QPushButton(_("btn_clear"))
+        clear_btn.clicked.connect(self.clear_date)
+        cancel_btn = QPushButton(_("btn_cancel"))
+        cancel_btn.clicked.connect(self.reject)
+
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(clear_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        self.selected_date_str = ""
+
+    def clear_date(self):
+        self.selected_date_str = ""
+        self.done(QDialog.DialogCode.Accepted)
+
+    def accept(self):
+        self.selected_date_str = self.calendar.selectedDate().toString("dd.MM.yyyy")
+        super().accept()
+
+class ShortsManagerDialog(QDialog):
+    def __init__(self, parent, ep_id, ep_number, ep_folder, game_name, db_size, db_duration, ai_url, config, hostings):
+        super().__init__(parent)
+        self.ep_id = ep_id
+        self.ep_number = ep_number
+        self.ep_folder = ep_folder
+        self.shorts_folder = os.path.join(ep_folder, "shorts")
+        self.game_name = game_name
+        self.ai_url = ai_url
+        self.config = config
+        self.hostings = hostings
+
+        self.setWindowTitle(f"{_('title_shorts_manager')}: {game_name} - Эпизод {ep_number}")
+        self.resize(950, 500)
+        layout = QVBoxLayout(self)
+
+        # --- ВЕРХНЯЯ ИНФО-ПАНЕЛЬ ---
+        info_group = QWidget()
+        info_layout = QVBoxLayout(info_group)
+        
+        title_lbl = QLabel(f"<b>{game_name} - {_('lbl_episode')} {ep_number}</b>")
+        title_lbl.setStyleSheet("font-size: 16px;")
+        stats_lbl = QLabel(f"{_('lbl_source')}: {db_size} | {db_duration}")
+        
+        btn_layout = QHBoxLayout()
+        play_btn = QPushButton(f"▶ {_('lbl_source_video')}")
+        play_btn.clicked.connect(self.play_original)
+        
+        folder_btn = QPushButton(f"📁 {_('lbl_episode_folder')}")
+        folder_btn.clicked.connect(lambda: os.startfile(self.ep_folder) if os.path.exists(self.ep_folder) else None)
+        
+        editor_btn = QPushButton(f"🎬 {_('lbl_videoeditor')}")
+        editor_btn.setToolTip(_("tooltip_run_videoeditor"))
+        editor_btn.clicked.connect(self.launch_editor)
+        
+        ai_btn = QPushButton(_("lbl_ai_chat"))
+        ai_btn.clicked.connect(lambda: webbrowser.open(self.ai_url) if self.ai_url else QMessageBox.warning(self, _("status_error"), _("msg_ai_link_not_set")))
+
+        btn_layout.addWidget(play_btn)
+        btn_layout.addWidget(folder_btn)
+        btn_layout.addWidget(editor_btn)
+        btn_layout.addWidget(ai_btn)
+        
+        info_layout.addWidget(title_lbl)
+        info_layout.addWidget(stats_lbl)
+        info_layout.addLayout(btn_layout)
+        layout.addWidget(info_group)
+
+        # --- ТАБЛИЦА ШОРТСОВ ---
+        self.table = QTableWidget(0, 6 + len(self.hostings))
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
+        layout.addWidget(self.table)
+
+        # --- ПАНЕЛЬ ДОБАВЛЕНИЯ ---
+        add_btn = QPushButton(f"+ {_('lbl_add_shorts')}")
+        add_btn.setStyleSheet("padding: 10px; font-weight: bold;")
+        add_btn.clicked.connect(self.add_short)
+        layout.addWidget(add_btn)
+
+        self.update_table()
+
+    def launch_editor(self):
+        editor_path = self.config.get("video_editor_path", "")
+        if os.path.exists(editor_path):
+            subprocess.Popen([editor_path])
+        else:
+            QMessageBox.warning(self, _("status_error"), _("msg_videoeditor_path_not_set"))
+
+    def play_original(self):
+        if not os.path.exists(self.ep_folder): return
+        for f in os.listdir(self.ep_folder):
+            if f.endswith(('.mp4', '.mkv', '.avi')) and "shorts" not in f.lower():
+                os.startfile(os.path.join(self.ep_folder, f))
+                return
+        QMessageBox.warning(self, _("status_error"), _("msg_episode_file_not_found"))
+
+    def update_table(self):
+        shorts = get_shorts(self.ep_id)
+        self.table.clearContents()
+        self.table.setRowCount(len(shorts))
+        
+        headers = [_("col_name"), _("col_size"), _("col_time"), _("col_media"), _("col_tags"), _("col_publish_date")] + [h[2] for h in self.hostings]
+        self.table.setHorizontalHeaderLabels(headers)
+        
+        for row, s in enumerate(shorts):
+            s_id, s_num, s_size, s_dur, s_title, s_tags, s_pub = s
+            display_title = s_title if s_title else f"Shorts_{s_num}"
+            
+            title_item = QTableWidgetItem(display_title)
+            title_item.setData(Qt.ItemDataRole.UserRole, s_id)
+            self.table.setItem(row, 0, title_item)
+            self.table.setItem(row, 1, QTableWidgetItem(s_size))
+            self.table.setItem(row, 2, QTableWidgetItem(s_dur))
+            
+            # Медиа-кнопки
+            media_w = QWidget()
+            m_lay = QHBoxLayout(media_w)
+            m_lay.setContentsMargins(2,2,2,2)
+            f_btn = QPushButton("📁")
+            f_btn.setFixedWidth(30)
+            f_btn.clicked.connect(lambda ch, sid=s_id: os.startfile(self.shorts_folder) if os.path.exists(self.shorts_folder) else None)
+            p_btn = QPushButton("▶")
+            p_btn.setFixedWidth(30)
+            p_btn.clicked.connect(lambda ch, sid=s_id, num=s_num: self.play_short(num))
+            m_lay.addWidget(f_btn)
+            m_lay.addWidget(p_btn)
+            self.table.setCellWidget(row, 3, media_w)
+            
+            # Теги
+            tags_item = QTableWidgetItem(s_tags if s_tags else _("lbl_add_tags"))
+            if not s_tags: tags_item.setBackground(QColor("#ffcccb"))
+            self.table.setItem(row, 4, tags_item)
+            
+            self.table.setItem(row, 5, QTableWidgetItem(s_pub if s_pub else _("lbl_not_set")))
+            
+            # Хостинги
+            uploads = {u[0]: u[2] for u in get_short_uploads(s_id)}
+            for col_off, (h_id, _, h_name) in enumerate(self.hostings):
+                hw = QWidget()
+                hl = QHBoxLayout(hw)
+                hl.setContentsMargins(2,2,2,2)
+                
+                cb = QCheckBox()
+                cb.setChecked(h_id in uploads)
+                cb.toggled.connect(lambda ch, sid=s_id, hid=h_id: update_short_upload_status(sid, hid, int(ch)))
+                
+                url = next((u[2] for u in get_short_uploads(s_id) if u[0] == h_id), "")
+                link_btn = QPushButton("🌐" if url else "✏️")
+                link_btn.setFixedWidth(30)
+                if url: link_btn.setStyleSheet("background-color: #add8e6;")
+                
+                link_btn.clicked.connect(lambda ch, sid=s_id, hid=h_id, hn=h_name, u=url: webbrowser.open(u) if u else self.edit_url(sid, hid, hn))
+                link_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                link_btn.customContextMenuRequested.connect(lambda pos, sid=s_id, hid=h_id, hn=h_name: self.edit_url(sid, hid, hn))
+                
+                hl.addWidget(cb)
+                hl.addWidget(link_btn)
+                self.table.setCellWidget(row, 6 + col_off, hw)
+
+    def play_short(self, s_num):
+        if not os.path.exists(self.shorts_folder): return
+        expected = f"Short {s_num}"
+        for f in os.listdir(self.shorts_folder):
+            if expected in f and f.endswith(('.mp4', '.mkv')):
+                os.startfile(os.path.join(self.shorts_folder, f))
+                return
+        QMessageBox.warning(self, _("status_error"), _("msg_short_file_not_found"))
+
+    def add_short(self):
+        start_dir = self.config.get("renders_folder", "")
+        file, _ = QFileDialog.getOpenFileName(self, _("lbl_select_short"), start_dir, f"{_('lbl_video_files')} (*.mp4 *.mkv)")
+        if not file: return
+        
+        os.makedirs(self.shorts_folder, exist_ok=True)
+        shorts = get_shorts(self.ep_id)
+        next_num = max([s[1] for s in shorts] + [0]) + 1
+        
+        _, ext = os.path.splitext(file)
+        out_name = f"{self.game_name} - Ep.{self.ep_number} - Short {next_num}{ext}"
+        out_path = os.path.join(self.shorts_folder, out_name)
+        
+        norm_in = os.path.normpath(file)
+        norm_out = os.path.normpath(out_path)
+        
+        if norm_in != norm_out:
+            try:
+                shutil.move(norm_in, norm_out)
+            except Exception as e:
+                QMessageBox.critical(self, _("status_error"), f"{_('lbl_video_convert_error')}:\n{e}")
+                return
+        
+        # Запрашиваем размер и время через родительское окно
+        size_str = self.parent().get_format_size(os.path.getsize(norm_out))
+        dur_str = self.parent().get_video_duration(norm_out)
+        
+        add_short_to_db(self.ep_id, next_num, size_str, dur_str)
+        self.update_table()
+        self.parent().update_table() # Обновляем счетчик в главной таблице
+
+    def on_cell_double_clicked(self, row, column):
+        s_id = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        
+        if column == 0:
+            cur = self.table.item(row, 0).text()
+            if cur.startswith("Shorts_"): cur = ""
+            new_t, ok = QInputDialog.getText(self, _("lbl_name"), _("lbl_own_name"), QLineEdit.EchoMode.Normal, cur)
+            if ok: update_short_field(s_id, 'custom_title', new_t.strip())
+                
+        elif column == 4:
+            cur = self.table.item(row, 4).text()
+            if cur == "Добавить теги": cur = ""
+            new_t, ok = QInputDialog.getText(self, _("lbl_tags"), _("lbl_enter_tags"), QLineEdit.EchoMode.Normal, cur)
+            if ok: update_short_field(s_id, 'tags', new_t.strip())
+                
+        elif column == 5:
+            cur = self.table.item(row, 5).text()
+            dialog = CalendarDialog(self, cur)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                update_short_field(s_id, 'publish_date', dialog.selected_date_str)
+                
+        self.update_table()
+
+    def edit_url(self, s_id, h_id, h_name):
+        url = next((u[2] for u in get_short_uploads(s_id) if u[0] == h_id), "")
+        new_u, ok = QInputDialog.getText(self, f"{_('lbl_link')}: {h_name}", f"{_('lbl_enter_link')}:", QLineEdit.EchoMode.Normal, url)
+        if ok:
+            update_short_url(s_id, h_id, new_u.strip())
+            self.update_table()
+
+class AboutDialog(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("О программе")
+        self.setFixedSize(450, 250)
+        
+        layout = QVBoxLayout(self)
+        
+        # Основной текст с поддержкой HTML
+        info_label = QLabel()
+        info_label.setTextFormat(Qt.TextFormat.RichText)
+        info_label.setOpenExternalLinks(True) # ВАЖНО: Разрешает кликать по ссылкам и открывать браузер
+        info_label.setWordWrap(True)
+        
+        text = f"""
+        <h2 style='text-align: center; color: #2c3e50;'>LetsPlayManager v{APP_VERSION}</h2>
+        <p style='text-align: center;'>Умный инструмент для наведения порядка в исходниках и управления публикациями.</p>
+        <hr>
+        <p><b>Основные возможности:</b><br>
+        Автоматизация перепаковки, управление метаданными и шортсами, планирование публикаций и интеграция с видеоредакторами.</p>
+        <p><b>Следить за обновлениями:</b><br>
+        🐙 <a href='https://github.com/zurisar/letsplaymanager' style='color: #2980b9;'>Исходный код на GitHub</a><br>
+        🟦 <a href='https://vk.ru/zarubagames' style='color: #2980b9;'>Официальное сообщество VK</a></p>
+        <br>
+        <p style='text-align: center; font-size: 10px; color: gray;'>Разработано с душой для создателей контента.</p>
+        """
+        
+        info_label.setText(text)
+        layout.addWidget(info_label)
+        
+        # Кнопка закрытия по центру
+        btn_layout = QHBoxLayout()
+        close_btn = QPushButton("Закрыть")
+        close_btn.setFixedWidth(100)
+        close_btn.clicked.connect(self.accept)
+        
+        btn_layout.addStretch()
+        btn_layout.addWidget(close_btn)
+        btn_layout.addStretch()
+        
+        layout.addLayout(btn_layout)
+
 class LetsPlayManager(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -761,10 +1048,26 @@ class LetsPlayManager(QMainWindow):
         self.add_game_btn.clicked.connect(self.add_new_game) 
         top_panel.addWidget(self.add_game_btn)
 
+        # --- НОВАЯ КНОПКА РЕДАКТИРОВАНИЯ ---
+        self.edit_game_btn = QPushButton("✏ Редактировать")
+        self.edit_game_btn.clicked.connect(self.edit_current_game)
+        top_panel.addWidget(self.edit_game_btn)
+        # -----------------------------------
+
+        # --- НОВАЯ КНОПКА УДАЛЕНИЯ ---
+        self.delete_game_btn = QPushButton("🗑 Удалить игру")
+        self.delete_game_btn.setStyleSheet("color: #c0392b; font-weight: bold;") # Сделаем её красной для привлечения внимания
+        self.delete_game_btn.clicked.connect(self.delete_current_game)
+        top_panel.addWidget(self.delete_game_btn)
+        # -----------------------------
+
         # Кнопка открытия настроек
         self.settings_btn = QPushButton(_("btn_settings"))
         self.settings_btn.clicked.connect(self.open_settings)
         top_panel.addWidget(self.settings_btn)
+
+        self.about_btn = QPushButton(_("btn_about"))
+        self.about_btn.clicked.connect(self.open_about)
 
         # Пружина, которая прижмет все элементы панели к левому краю
         top_panel.addStretch() 
@@ -779,7 +1082,17 @@ class LetsPlayManager(QMainWindow):
         self.ai_chat_btn = QPushButton(_("lbl_ai_chat"))
         self.ai_chat_btn.setFixedWidth(200)
         self.ai_chat_btn.clicked.connect(self.handle_ai_btn_click)
+        self.steam_store_btn = QPushButton("🌐 Steam")
+        self.steam_store_btn.clicked.connect(self.open_steam_store)
+        self.steam_store_btn.setVisible(False) # Скрываем по умолчанию
+        
+        self.steam_play_btn = QPushButton(f"🎮 {_('btn_play')}")
+        self.steam_play_btn.clicked.connect(self.play_steam_game)
+        self.steam_play_btn.setVisible(False) # Скрываем по умолчанию
+
         self.game_tools_panel.addWidget(self.ai_chat_btn)
+        self.game_tools_panel.addWidget(self.steam_store_btn)
+        self.game_tools_panel.addWidget(self.steam_play_btn)
         
         self.game_tools_panel.addStretch() # Прижимаем кнопку влево
         main_layout.addLayout(self.game_tools_panel)
@@ -795,6 +1108,10 @@ class LetsPlayManager(QMainWindow):
 
         # Подключаем двойной клик по ячейке для редактирования кастомного названия эпизода (Пункт 5)
         self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
+
+        # --- НОВОЕ: Включаем ПКМ-меню ---
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.show_context_menu)
         
         # Красиво растягиваем столбцы по ширине окна
         header = self.table.horizontalHeader()
@@ -809,12 +1126,9 @@ class LetsPlayManager(QMainWindow):
         self.add_episode_btn.clicked.connect(self.show_add_episode_dialog)
         self.render_btn = QPushButton(_("btn_compress"))
         self.render_btn.clicked.connect(self.show_compress_dialog)
-        self.delete_old_btn = QPushButton(_("btn_delete_old"))
-        self.delete_old_btn.clicked.connect(self.show_delete_dialog) # <-- ПРИВЯЗКА
 
         bottom_panel.addWidget(self.add_episode_btn)
         bottom_panel.addWidget(self.render_btn)
-        bottom_panel.addWidget(self.delete_old_btn)
 
         main_layout.addLayout(bottom_panel)
 
@@ -825,6 +1139,104 @@ class LetsPlayManager(QMainWindow):
         if not self.config.get("renders_folder") or not self.config.get("recordings_folder"):
             QMessageBox.information(self, "Настройка", "Пожалуйста, укажите базовые папки для записей и рендеров.")
             self.open_settings()
+
+    def edit_current_game(self):
+        current_index = self.game_selector.currentIndex()
+        if current_index == -1: return
+        
+        game_name = self.game_selector.currentText()
+        game_data = self.game_selector.itemData(current_index)
+        game_id = game_data['id']
+        folder = game_data['path']
+        old_steam_id = game_data.get('steam_id', '')
+        
+        dialog = EditGameDialog(self, game_name, game_data)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            new_name = dialog.name_input.text().strip()
+            new_ai = dialog.ai_url_input.text().strip()
+            new_steam = dialog.steam_input.text().strip()
+            
+            if not new_name:
+                QMessageBox.warning(self, "Ошибка", "Название игры не может быть пустым.")
+                return
+                
+            # Если ввели/изменили Steam ID - скачиваем капсулу
+            if new_steam and new_steam != old_steam_id:
+                urls_to_try = [
+                    f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{new_steam}/header.jpg",
+                    f"https://cdn.akamai.steamstatic.com/steam/apps/{new_steam}/header.jpg"
+                ]
+                import requests
+                for img_url in urls_to_try:
+                    try:
+                        response = requests.get(img_url, timeout=5)
+                        if response.status_code == 200:
+                            img_path = os.path.join(folder, "steam_capsule.jpg")
+                            with open(img_path, 'wb') as f:
+                                f.write(response.content)
+                            logging.info(f"Новая обложка Steam сохранена: {img_path}")
+                            break
+                    except Exception as e:
+                        logging.error(f"Не удалось скачать обложку Steam: {e}")
+            
+            # Обновляем БД
+            update_game(game_id, new_name, new_ai, new_steam)
+            
+            # Перезагружаем список игр и возвращаем фокус на ту же игру
+            self.load_games()
+            
+            # Ищем нашу игру по ID, чтобы вернуть на нее выпадающий список
+            for i in range(self.game_selector.count()):
+                if self.game_selector.itemData(i)['id'] == game_id:
+                    self.game_selector.setCurrentIndex(i)
+                    break
+
+    def delete_current_game(self):
+        current_index = self.game_selector.currentIndex()
+        if current_index == -1: return
+        
+        game_name = self.game_selector.currentText()
+        game_data = self.game_selector.itemData(current_index)
+        game_id = game_data['id']
+        game_folder = game_data['path']
+        
+        # 1. Запрашиваем подтверждение вводом названия
+        msg = (f"<b>ВНИМАНИЕ!</b> Это действие безвозвратно удалит:<br>"
+               f"- Игру из базы данных<br>"
+               f"- Все связанные эпизоды и шортсы<br>"
+               f"- <b>Папку с игрой и всеми видео на диске</b><br><br>"
+               f"Для подтверждения введите точное название игры: <i>{game_name}</i>")
+               
+        text, ok = QInputDialog.getText(self, "Удаление игры", msg, QLineEdit.EchoMode.Normal, "")
+        
+        if ok:
+            if text.strip() == game_name:
+                import shutil # На всякий случай импортируем прямо здесь
+                
+                # 2. Пытаемся физически удалить папку с диска
+                if os.path.exists(game_folder):
+                    try:
+                        shutil.rmtree(game_folder)
+                        logging.info(f"Папка игры удалена: {game_folder}")
+                    except Exception as e:
+                        QMessageBox.critical(self, "Ошибка", f"Не удалось удалить папку с диска.\nУбедитесь, что файлы не открыты в видеоредакторе или плеере.\n\n{e}")
+                        return # Если не удалилась папка, прерываем удаление, чтобы не сломать логику
+                
+                # 3. Чистим базу данных
+                delete_game_full(game_id)
+                logging.info(f"Игра '{game_name}' удалена из БД.")
+                
+                QMessageBox.information(self, "Успех", f"Игра '{game_name}' полностью удалена!")
+                
+                # 4. Обновляем интерфейс
+                self.load_games()
+            else:
+                QMessageBox.warning(self, "Отмена", "Название введено неверно. Удаление отменено.")
+
+    def open_about(self):
+        dialog = AboutDialog(self)
+        dialog.exec()
 
     def open_url_dialog(self, episode_id, hosting_id, hosting_name):
         """Всплывающее окно для ввода ссылки на видео (Пункт 7)"""
@@ -838,6 +1250,101 @@ class LetsPlayManager(QMainWindow):
         )
         if ok:
             toggle_upload(episode_id, hosting_id, True, url.strip())
+            self.update_table()
+
+    def show_context_menu(self, pos):
+        item = self.table.itemAt(pos)
+        if not item:
+            return
+            
+        row = item.row()
+        ep_id = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        
+        # Данные для пути
+        current_index = self.game_selector.currentIndex()
+        if current_index == -1: return
+        game_data = self.game_selector.itemData(current_index)
+        ep_number = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole + 2)
+        ep_folder = os.path.join(game_data['path'], f"ep{ep_number}")
+
+        menu = QMenu(self)
+        refresh_action = menu.addAction("🔄 Обновить данные видеофайла")
+        date_action = menu.addAction("📅 Изменить дату публикации")
+        menu.addSeparator() # Разделитель для безопасности
+        delete_action = menu.addAction("🗑️ Удалить папку эпизода (Очистка)") # <--- НОВАЯ КНОПКА
+        
+        # Показываем меню ровно в месте клика
+        action = menu.exec(self.table.viewport().mapToGlobal(pos))
+        
+        if action == refresh_action:
+            self.refresh_episode_data(ep_id, ep_folder)
+        elif action == date_action:
+            self.edit_publish_date(ep_id, row)
+        elif action == delete_action: # <--- ОБРАБОТЧИК КЛИКА
+            self.delete_episode_folder(ep_id, ep_folder)
+
+    def refresh_episode_data(self, ep_id, ep_folder):
+        if not os.path.exists(ep_folder):
+            QMessageBox.warning(self, "Ошибка", "Папка эпизода не найдена на диске.")
+            return
+        
+        video_file = None
+        for file in os.listdir(ep_folder):
+            if file.endswith(('.mkv', '.mp4')):
+                video_file = os.path.join(ep_folder, file)
+                if file.endswith('.mp4'): break
+        
+        if video_file:
+            size_bytes = os.path.getsize(video_file)
+            size_text = self.get_format_size(size_bytes)
+            duration_text = self.get_video_duration(video_file)
+            update_episode_metadata(ep_id, size_text, duration_text)
+            self.update_table()
+            QMessageBox.information(self, "Готово", f"Данные файла успешно обновлены!\nВес: {size_text}\nВремя: {duration_text}")
+        else:
+            QMessageBox.warning(self, "Ошибка", "Не удалось найти видеофайл в папке эпизода.")
+
+    def edit_publish_date(self, ep_id, row):
+        current_date = self.table.item(row, 6).text()
+        dialog = CalendarDialog(self, current_date)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            update_episode_publish_date(ep_id, dialog.selected_date_str)
+            self.update_table()
+
+    def delete_episode_folder(self, ep_id, ep_folder):
+        # Проверяем, существует ли папка вообще
+        if not os.path.exists(ep_folder):
+            QMessageBox.information(self, "Информация", "Папка уже удалена с диска.")
+            mark_episode_deleted(ep_id)
+            self.update_table()
+            return
+
+        # Запрашиваем подтверждение
+        reply = QMessageBox.question(
+            self, "Подтверждение очистки", 
+            f"Вы уверены, что хотите безвозвратно удалить папку:\n{ep_folder}\nсо всеми тяжелыми исходниками?\n\nЗапись об эпизоде останется в таблице (окрасится в голубой).", 
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                shutil.rmtree(ep_folder) # Безвозвратно удаляем папку со всем содержимым
+                mark_episode_deleted(ep_id) # Обновляем БД
+                self.update_table() # Перерисовываем таблицу (строка станет голубой)
+                QMessageBox.information(self, "Успех", "Папка эпизода успешно удалена.")
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Не удалось удалить папку:\n{e}")
+
+    def open_url_dialog(self, ep_id, host_id, host_name):
+        current_url = get_upload_url(ep_id, host_id)
+        new_url, ok = QInputDialog.getText(
+            self, f"Ссылка: {host_name}",
+            "Введите ссылку на опубликованное видео:",
+            QLineEdit.EchoMode.Normal, current_url or ""
+        )
+        if ok:
+            update_upload_url(ep_id, host_id, new_url.strip())
             self.update_table()
 
     def retranslate_ui(self):
@@ -887,21 +1394,6 @@ class LetsPlayManager(QMainWindow):
             
             # Перерисовываем таблицу, чтобы новые имена файлов применились
             self.update_table()
-
-    def show_delete_dialog(self):
-        current_index = self.game_selector.currentIndex()
-        if current_index == -1:
-            return
-            
-        game_data = self.game_selector.itemData(current_index)
-        game_id = game_data['id']
-        folder_path = game_data['path']
-        game_name = self.game_selector.currentText()
-
-        dialog = DeleteEpisodesDialog(self, game_id, folder_path, game_name)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            QMessageBox.information(self, _("msg_title_done"), _("msg_sources_deleted_success"))
-            self.update_table() # Обновляем таблицу, чтобы строки стали голубыми
 
     def show_compress_dialog(self):
         dialog = CompressDialog(self, self.config)
@@ -1025,8 +1517,8 @@ class LetsPlayManager(QMainWindow):
         self.game_selector.clear()
         games = get_games()
         # Добавляем ai_url в распаковку и в userData
-        for game_id, name, folder_path, ai_url in games:
-            self.game_selector.addItem(name, userData={'id': game_id, 'path': folder_path, 'ai_url': ai_url})
+        for game_id, name, folder_path, ai_url, steam_id in games:
+            self.game_selector.addItem(name, userData={'id': game_id, 'path': folder_path, 'ai_url': ai_url, 'steam_id': steam_id})
         self.game_selector.blockSignals(False)
         
         if self.game_selector.count() > 0:
@@ -1040,6 +1532,7 @@ class LetsPlayManager(QMainWindow):
             name = dialog.name_input.text().strip()
             folder = dialog.folder_input.text().strip()
             ai_url = dialog.ai_url_input.text().strip()
+            steam_id = dialog.steam_input.text().strip() # <--- Достаем Steam ID
             
             if not name or not folder:
                 QMessageBox.warning(self, _("status_error"), _("msg_name_folder_game_need"))
@@ -1054,8 +1547,28 @@ class LetsPlayManager(QMainWindow):
                     QMessageBox.critical(self, _("status_error"), f"{_('msg_cant_create_folder')}\n{e}")
                     return
             
+            # --- НОВОЕ: Скачиваем капсулу из Steam (с проверкой двух URL) ---
+            if steam_id:
+                urls_to_try = [
+                    f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{steam_id}/header.jpg",
+                    f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_id}/header.jpg"
+                ]
+                
+                import requests
+                for img_url in urls_to_try:
+                    try:
+                        response = requests.get(img_url, timeout=5)
+                        if response.status_code == 200:
+                            img_path = os.path.join(folder, "steam_capsule.jpg")
+                            with open(img_path, 'wb') as f:
+                                f.write(response.content)
+                            logging.info(f"Обложка Steam сохранена: {img_path}")
+                            break # Успешно скачали, выходим из цикла
+                    except Exception as e:
+                        logging.error(f"Ошибка при попытке скачать по ссылке {img_url}: {e}")
+            
             # Сохраняем в БД с новыми параметрами
-            add_game(name, folder, ai_url=ai_url)
+            add_game(name, folder, ai_url=ai_url, steam_id=steam_id) # <--- Передаем steam_id
             
             self.load_games()
             self.game_selector.setCurrentIndex(self.game_selector.count() - 1)
@@ -1086,20 +1599,7 @@ class LetsPlayManager(QMainWindow):
         # Столбец 6: Редактирование даты публикации
         elif column == 6:
             ep_id = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-            current_date = self.table.item(row, 6).text()
-            if current_date == "Не задана":
-                current_date = ""
-
-            new_date, ok = QInputDialog.getText(
-                self, _("lbl_publishing_date"), 
-                _("lbl_enter_publish_date"), 
-                QLineEdit.EchoMode.Normal, 
-                current_date
-            )
-            
-            if ok:
-                update_episode_publish_date(ep_id, new_date.strip())
-                self.update_table()
+            self.edit_publish_date(ep_id, row) # <--- Вызываем наш новый виджет!
 
     def handle_ai_btn_click(self):
         current_index = self.game_selector.currentIndex()
@@ -1145,12 +1645,18 @@ class LetsPlayManager(QMainWindow):
             self.ai_chat_btn.setText(_("lbl_ai_chat_add"))
             self.ai_chat_btn.setStyleSheet("") # Обычный цвет
 
+        # --- ПОКАЗЫВАЕМ ИЛИ СКРЫВАЕМ КНОПКИ STEAM ЗДЕСЬ ---
+        steam_id = game_data.get('steam_id', '')
+        self.steam_store_btn.setVisible(bool(steam_id))
+        self.steam_play_btn.setVisible(bool(steam_id))
+        # ---------------------------------------------------
+
         hostings = get_videohostings() 
         
         # Добавили новую колонку "Медиа" (Индекс 3)
         headers = [
-            _("col_episode"), _("col_size"), _("col_time"), "Медиа", 
-            _("col_desc"), _("col_preview"), _("col_publish_date")
+            _("col_episode"), _("col_size"), _("col_time"), _("col_media"), 
+            _("col_desc"), _("col_preview"), _("col_publish_date"), _("col_shorts")
         ]
         for h_id, h_key, h_display_name in hostings:
             headers.append(h_display_name)
@@ -1176,7 +1682,7 @@ class LetsPlayManager(QMainWindow):
         self.table.setRowCount(len(episodes))
 
         for row_idx, ep in enumerate(episodes):
-            ep_id, ep_number, ep_title, db_size, db_duration, pub_date = ep
+            ep_id, ep_number, ep_title, db_size, db_duration, pub_date, shorts_count = ep
             ep_folder = os.path.join(folder_path, f"ep{ep_number}")
             folder_exists = os.path.exists(ep_folder)
 
@@ -1288,6 +1794,19 @@ class LetsPlayManager(QMainWindow):
                     pub_item.setBackground(QColor("#add8e6"))
                 self.table.setItem(row_idx, 6, pub_item)
 
+                # --- КОЛОНКА ШОРТСОВ ---
+                shorts_btn = QPushButton()
+                if shorts_count > 0:
+                    shorts_btn.setText(f"Шортсов: {shorts_count}")
+                    shorts_btn.setStyleSheet("background-color: #90ee90; color: black;") # Зеленый индикатор
+                else:
+                    shorts_btn.setText("+ Добавить")
+                
+                # Привязываем вызов менеджера
+                shorts_btn.clicked.connect(lambda checked, e=ep_id, n=ep_number: self.open_shorts_manager(e, n))
+
+                self.table.setCellWidget(row_idx, 7, shorts_btn) # Ставим кнопку в 7-й столбец
+
             else:
                 # Создаем элементы
                 size_item = QTableWidgetItem(db_size if db_size and db_size != '0' else _("lbl_deleted"))
@@ -1299,8 +1818,10 @@ class LetsPlayManager(QMainWindow):
                 # ДОБАВЛЕНО: Создаем элемент даты для удаленных папок
                 pub_item = QTableWidgetItem(pub_date if pub_date else _("lbl_not_set"))
 
+                shorts_item  = QTableWidgetItem("-")
+
                 # Красим их ВСЕ в голубой
-                for it in (size_item, dur_item, media_item, desc_item, prev_item, pub_item):
+                for it in (size_item, dur_item, media_item, desc_item, prev_item, pub_item, shorts_item):
                     it.setBackground(QColor("#add8e6"))
 
                 self.table.setItem(row_idx, 1, size_item)
@@ -1309,8 +1830,9 @@ class LetsPlayManager(QMainWindow):
                 self.table.setItem(row_idx, 4, desc_item)
                 self.table.setItem(row_idx, 5, prev_item)
                 self.table.setItem(row_idx, 6, pub_item) # <--- ОБЯЗАТЕЛЬНО ПЕРЕЗАПИСЫВАЕМ СТОЛБЕЦ 6      
+                self.table.setItem(row_idx, 7, shorts_item)
             
-            # --- ДИНАМИЧЕСКИЕ СТОЛБЦЫ И ССЫЛКИ (Индексы сместились на 7 + col_offset) ---
+            # --- ДИНАМИЧЕСКИЕ СТОЛБЦЫ И ССЫЛКИ (Индексы сместились на 8 + col_offset) ---
             uploads = get_uploads(ep_id) 
             
             for col_offset, (h_id, h_key, h_display_name) in enumerate(hostings):
@@ -1324,31 +1846,30 @@ class LetsPlayManager(QMainWindow):
                 cb.setChecked(h_id in uploads)
                 cb.toggled.connect(lambda checked, e=ep_id, h=h_id: toggle_upload(e, h, checked))
                 
-                # Кнопка изменения ссылки
-                link_edit_btn = QPushButton("✏️")
-                link_edit_btn.setFixedWidth(25)
-                link_edit_btn.setToolTip(f"{_('tooltip_enter_change_link')} {h_display_name}")
-                link_edit_btn.clicked.connect(lambda checked, e=ep_id, h=h_id, name=h_display_name: self.open_url_dialog(e, h, name))
-                
-                # Кнопка перехода по ссылке
-                link_open_btn = QPushButton("🌐")
-                link_open_btn.setFixedWidth(25)
-                link_open_btn.setToolTip(f"{_('tooltip_watch_on')} {h_display_name}")
-                
+                # Единая умная кнопка ссылки
                 current_url = get_upload_url(ep_id, h_id)
+                link_btn = QPushButton()
+                link_btn.setFixedWidth(35)
+
                 if current_url:
-                    # Если ссылка есть, кнопка активна и открывает браузер
-                    link_open_btn.clicked.connect(lambda checked, url=current_url: webbrowser.open(url))
+                    link_btn.setText("🌐")
+                    link_btn.setStyleSheet("background-color: #add8e6;") # Голубой цвет, если есть
+                    link_btn.setToolTip(f"{_('tooltip_watch_on')} {h_display_name}\n{_("lbl_open_change")}")
+                    link_btn.clicked.connect(lambda checked, url=current_url: webbrowser.open(url))
                 else:
-                    # Если ссылки нет, делаем кнопку серой/неактивной
-                    link_open_btn.setEnabled(False)
+                    link_btn.setText("✏️")
+                    link_btn.setToolTip(f"{_('tooltip_enter_change_link')} {h_display_name}")
+                    link_btn.clicked.connect(lambda checked, e=ep_id, h=h_id, name=h_display_name: self.open_url_dialog(e, h, name))
+                
+                # ПКМ по самой кнопке всегда открывает окно редактирования ссылки
+                link_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                link_btn.customContextMenuRequested.connect(lambda pos, e=ep_id, h=h_id, name=h_display_name: self.open_url_dialog(e, h, name))
                 
                 cell_layout.addWidget(cb)
-                cell_layout.addWidget(link_edit_btn)
-                cell_layout.addWidget(link_open_btn)
+                cell_layout.addWidget(link_btn)
                 cell_layout.addStretch()
                 
-                self.table.setCellWidget(row_idx, 7 + col_offset, cell_widget)
+                self.table.setCellWidget(row_idx, 8 + col_offset, cell_widget)
 
     def open_notepad(self, file_path):
         if not os.path.exists(file_path):
@@ -1429,6 +1950,42 @@ class LetsPlayManager(QMainWindow):
         except Exception as e:
             # Если ffprobe не найден или файл сломан
             return _("status_error")
+        
+    def open_shorts_manager(self, ep_id, ep_number):
+        current_index = self.game_selector.currentIndex()
+        if current_index == -1: return
+        
+        game_data = self.game_selector.itemData(current_index)
+        game_name = self.game_selector.currentText()
+        ep_folder = os.path.join(game_data['path'], f"ep{ep_number}")
+        ai_url = game_data.get('ai_url', '')
+
+        # Получаем размер и длительность эпизода из базы
+        episodes = get_episodes(game_data['id'])
+        ep = next((e for e in episodes if e[0] == ep_id), None)
+        if not ep: return
+        db_size, db_dur = ep[3], ep[4]
+
+        dialog = ShortsManagerDialog(self, ep_id, ep_number, ep_folder, game_name, db_size, db_dur, ai_url, self.config, get_videohostings())
+        dialog.exec()
+        
+        # Когда окно закроется, обновляем главную таблицу (чтобы кнопка "+ Добавить" сменилась на счетчик)
+        self.update_table()
+
+    def open_steam_store(self):
+        current_index = self.game_selector.currentIndex()
+        if current_index == -1: return
+        steam_id = self.game_selector.itemData(current_index).get('steam_id', '')
+        if steam_id:
+            webbrowser.open(f"https://store.steampowered.com/app/{steam_id}")
+
+    def play_steam_game(self):
+        current_index = self.game_selector.currentIndex()
+        if current_index == -1: return
+        steam_id = self.game_selector.itemData(current_index).get('steam_id', '')
+        if steam_id:
+            # Магия протокола steam:// - запускает игру напрямую без браузера
+            webbrowser.open(f"steam://rungameid/{steam_id}")
 
 if __name__ == "__main__":
     # На всякий случай проверяем БД перед стартом

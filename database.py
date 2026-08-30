@@ -63,6 +63,33 @@ def init_db():
         )
     ''')
 
+    # Таблица для шортсов
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS shorts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            episode_id INTEGER,
+            number INTEGER,
+            file_size TEXT DEFAULT '0',
+            duration TEXT DEFAULT '0',
+            custom_title TEXT DEFAULT '',
+            tags TEXT DEFAULT '',
+            publish_date TEXT DEFAULT '',
+            FOREIGN KEY(episode_id) REFERENCES episodes(id)
+        )
+    ''')
+
+    # Таблица для загрузок шортсов на хостинги
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS shorts_uploads (
+            short_id INTEGER,
+            videohosting_id TEXT,
+            is_uploaded INTEGER DEFAULT 0,
+            url TEXT DEFAULT '',
+            PRIMARY KEY (short_id, videohosting_id),
+            FOREIGN KEY(short_id) REFERENCES shorts(id)
+        )
+    ''')
+
     cursor.execute("INSERT OR IGNORE INTO videohostings (key, display_name) VALUES ('youtube', 'YouTube')")
     cursor.execute("INSERT OR IGNORE INTO videohostings (key, display_name) VALUES ('rutube', 'RuTube')")
 
@@ -84,7 +111,7 @@ def get_games():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     # Теперь мы извлекаем еще и ai_url
-    cursor.execute('SELECT id, name, folder_path, ai_url FROM games')
+    cursor.execute('SELECT id, name, folder_path, ai_url, steam_id FROM games')
     games = cursor.fetchall()
     conn.close()
     return games
@@ -109,8 +136,15 @@ def add_episode_if_not_exists(game_id, number):
 def get_episodes(game_id):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    # Добавили publish_date
-    cursor.execute('SELECT id, number, title, file_size, duration, publish_date FROM episodes WHERE game_id = ? ORDER BY number', (game_id,))
+    # Добавляем подсчет шортсов через LEFT JOIN
+    cursor.execute('''
+        SELECT e.id, e.number, e.title, e.file_size, e.duration, e.publish_date, COUNT(s.id) as shorts_count
+        FROM episodes e
+        LEFT JOIN shorts s ON e.id = s.episode_id
+        WHERE e.game_id = ? 
+        GROUP BY e.id
+        ORDER BY e.number
+    ''', (game_id,))
     episodes = cursor.fetchall()
     conn.close()
     return episodes
@@ -155,6 +189,18 @@ def get_upload_url(episode_id, videohosting_id):
     row = cursor.fetchone()
     conn.close()
     return row[0] if row else ''
+
+def update_upload_url(episode_id, videohosting_id, url):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    # Проверяем, есть ли уже запись для этого эпизода и хостинга
+    cursor.execute('SELECT 1 FROM episode_uploads WHERE episode_id = ? AND videohosting_id = ?', (episode_id, videohosting_id))
+    if cursor.fetchone():
+        cursor.execute('UPDATE episode_uploads SET url = ? WHERE episode_id = ? AND videohosting_id = ?', (url, episode_id, videohosting_id))
+    else:
+        cursor.execute('INSERT INTO episode_uploads (episode_id, videohosting_id, is_uploaded, url) VALUES (?, ?, 0, ?)', (episode_id, videohosting_id, url))
+    conn.commit()
+    conn.close()
 
 def toggle_upload(episode_id, videohosting_id, is_uploaded, url=''):
     """Установка статуса загрузки и опционально ссылки (Пункт 3 и 7)"""
@@ -203,6 +249,120 @@ def delete_videohosting(hosting_id):
     conn.execute("PRAGMA foreign_keys = ON;")
     cursor = conn.cursor()
     cursor.execute('DELETE FROM videohostings WHERE id = ?', (hosting_id,))
+    conn.commit()
+    conn.close()
+
+def mark_episode_deleted(episode_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    # Ставим флаг удаления и сбрасываем вес/время, так как файлов больше нет
+    cursor.execute('UPDATE episodes SET sources_deleted = 1, file_size = "0", duration = "0" WHERE id = ?', (episode_id,))
+    conn.commit()
+    conn.close()
+
+# --- ФУНКЦИИ ДЛЯ ШОРТСОВ ---
+
+def get_shorts(episode_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, number, file_size, duration, custom_title, tags, publish_date 
+        FROM shorts WHERE episode_id = ? ORDER BY number
+    ''', (episode_id,))
+    shorts = cursor.fetchall()
+    conn.close()
+    return shorts
+
+def add_short_to_db(episode_id, number, file_size="0", duration="0"):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO shorts (episode_id, number, file_size, duration) 
+        VALUES (?, ?, ?, ?)
+    ''', (episode_id, number, file_size, duration))
+    conn.commit()
+    conn.close()
+
+def update_short_field(short_id, field, value):
+    """Универсальная функция для обновления текстовых полей шортса"""
+    allowed_fields = ['custom_title', 'tags', 'publish_date']
+    if field in allowed_fields:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute(f'UPDATE shorts SET {field} = ? WHERE id = ?', (value, short_id))
+        conn.commit()
+        conn.close()
+
+def get_short_uploads(short_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT videohosting_id, is_uploaded, url FROM shorts_uploads WHERE short_id = ?', (short_id,))
+    uploads = cursor.fetchall()
+    conn.close()
+    return uploads
+
+def update_short_upload_status(short_id, videohosting_id, is_uploaded):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT 1 FROM shorts_uploads WHERE short_id = ? AND videohosting_id = ?', (short_id, videohosting_id))
+    if cursor.fetchone():
+        cursor.execute('UPDATE shorts_uploads SET is_uploaded = ? WHERE short_id = ? AND videohosting_id = ?', 
+                       (is_uploaded, short_id, videohosting_id))
+    else:
+        cursor.execute('INSERT INTO shorts_uploads (short_id, videohosting_id, is_uploaded) VALUES (?, ?, ?)', 
+                       (short_id, videohosting_id, is_uploaded))
+    conn.commit()
+    conn.close()
+
+def update_short_url(short_id, videohosting_id, url):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT 1 FROM shorts_uploads WHERE short_id = ? AND videohosting_id = ?', (short_id, videohosting_id))
+    if cursor.fetchone():
+        cursor.execute('UPDATE shorts_uploads SET url = ? WHERE short_id = ? AND videohosting_id = ?', 
+                       (url, short_id, videohosting_id))
+    else:
+        cursor.execute('INSERT INTO shorts_uploads (short_id, videohosting_id, is_uploaded, url) VALUES (?, ?, 0, ?)', 
+                       (short_id, videohosting_id, url))
+    conn.commit()
+    conn.close()
+
+def delete_game_full(game_id):
+    """Каскадное удаление игры и всех связанных с ней данных из всех таблиц"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Сначала находим все эпизоды этой игры
+    cursor.execute('SELECT id FROM episodes WHERE game_id = ?', (game_id,))
+    episodes = cursor.fetchall()
+    
+    for (ep_id,) in episodes:
+        # Для каждого эпизода находим его шортсы
+        cursor.execute('SELECT id FROM shorts WHERE episode_id = ?', (ep_id,))
+        shorts = cursor.fetchall()
+        
+        # Удаляем связи с хостингами для этих шортсов
+        for (sh_id,) in shorts:
+            cursor.execute('DELETE FROM shorts_uploads WHERE short_id = ?', (sh_id,))
+            
+        # Удаляем сами шортсы
+        cursor.execute('DELETE FROM shorts WHERE episode_id = ?', (ep_id,))
+        
+    # Теперь, когда зависимые данные удалены, сносим эпизоды и саму игру
+    cursor.execute('DELETE FROM episodes WHERE game_id = ?', (game_id,))
+    cursor.execute('DELETE FROM games WHERE id = ?', (game_id,))
+    
+    conn.commit()
+    conn.close()
+
+def update_game(game_id, name, ai_url, steam_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE games 
+        SET name = ?, ai_url = ?, steam_id = ? 
+        WHERE id = ?
+    ''', (name, ai_url, steam_id, game_id))
     conn.commit()
     conn.close()
 

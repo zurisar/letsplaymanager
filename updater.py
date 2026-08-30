@@ -39,6 +39,13 @@ def apply_migrations(db_path, old_version, new_version):
                 cursor.execute("ALTER TABLE episodes ADD COLUMN publish_date TEXT DEFAULT ''")
             conn.commit()
 
+        # --- МИГРАЦИЯ ДО ВЕРСИИ 0.5 (Шортсы) ---
+        if old_version < "0.5":
+            logging.info(f"Запуск обновления БД: с {old_version} до 0.5 (Создание таблиц Shorts)...")
+            # Просто вызываем init_db, так как мы добавили туда IF NOT EXISTS
+            from database import init_db
+            init_db()
+
     except Exception as e:
         logging.error(f"Критическая ошибка при обновлении БД: {e}")
         conn.rollback() # Откатываем изменения в случае сбоя
