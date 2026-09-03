@@ -411,12 +411,24 @@ def get_all_shorts_for_schedule():
     return data
 
 def is_game_archived(game_id):
-    """Проверяет, остались ли у игры живые исходники эпизодов"""
+    """Проверяет, переведена ли игра в режим архива (исходники удалены, но игра оставлена)"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+    
+    # 1. Считаем, сколько эпизодов у игры вообще в базе
+    cursor.execute('SELECT COUNT(*) FROM episodes WHERE game_id = ?', (game_id,))
+    total_episodes = cursor.fetchone()[0]
+    
+    # 2. Считаем, сколько из них живые (не удаленные)
     cursor.execute('SELECT COUNT(*) FROM episodes WHERE game_id = ? AND sources_deleted = 0', (game_id,))
     active_episodes = cursor.fetchone()[0]
     conn.close()
+    
+    # Если у игры еще вообще нет эпизодов (новая игра), она точно НЕ в архиве
+    if total_episodes == 0:
+        return False
+        
+    # Если эпизоды когда-то были, но живых больше не осталось — это архив
     return active_episodes == 0
 
 # Блок проверки: этот код выполнится только если запустить этот файл напрямую
