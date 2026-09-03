@@ -368,6 +368,57 @@ def update_game(game_id, name, ai_url, steam_id):
     conn.commit()
     conn.close()
 
+def check_unpublished_shorts(game_id):
+    # Проверяем наличие неопубликованных шортсов
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) FROM shorts s
+            LEFT JOIN shorts_uploads su ON s.id = su.short_id
+            WHERE s.episode_id IN (SELECT id FROM episodes WHERE game_id = ?)
+            AND (su.is_uploaded = 0 OR su.is_uploaded IS NULL)
+        ''', (game_id,))
+        unpublished_shorts = cursor.fetchone()[0]
+        conn.close()
+        return unpublished_shorts
+
+def get_all_episodes_for_schedule():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT e.id, g.name, g.folder_path, e.number, e.title, e.publish_date
+        FROM episodes e
+        JOIN games g ON e.game_id = g.id
+        WHERE e.sources_deleted = 0
+    ''')
+    data = cursor.fetchall()
+    conn.close()
+    return data
+
+def get_all_shorts_for_schedule():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    # Добавляем условие, чтобы шортсы удаленных эпизодов тоже не попадали в календарь
+    cursor.execute('''
+        SELECT s.id, g.name, e.number, s.number, s.custom_title, s.publish_date
+        FROM shorts s
+        JOIN episodes e ON s.episode_id = e.id
+        JOIN games g ON e.game_id = g.id
+        WHERE e.sources_deleted = 0
+    ''')
+    data = cursor.fetchall()
+    conn.close()
+    return data
+
+def is_game_archived(game_id):
+    """Проверяет, остались ли у игры живые исходники эпизодов"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM episodes WHERE game_id = ? AND sources_deleted = 0', (game_id,))
+    active_episodes = cursor.fetchone()[0]
+    conn.close()
+    return active_episodes == 0
+
 # Блок проверки: этот код выполнится только если запустить этот файл напрямую
 if __name__ == "__main__":
     init_db()
