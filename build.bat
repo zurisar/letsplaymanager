@@ -7,12 +7,13 @@ rmdir /s /q "build"
 rmdir /s /q "dist"
 
 :: 2. Компилируем чистый код
-pyinstaller --noconsole --onedir --name "LetsPlayManager" main.py
+pyinstaller --noconsole --onedir --name "LetsPlayManager" --icon="assets\icon.ico" main.py
 
 :: 3. Копируем внешние файлы прямо в корень собранной программы
 echo Копирование внешних ресурсов...
 xcopy /E /I /Y "lang" "dist\LetsPlayManager\lang"
 xcopy /E /I /Y "bin" "dist\LetsPlayManager\bin"
+xcopy /E /I /Y "assets" "dist\LetsPlayManager\assets"
 copy /Y "*.txt" "dist\LetsPlayManager\"
 
 echo.

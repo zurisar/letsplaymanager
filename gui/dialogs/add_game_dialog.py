@@ -31,13 +31,13 @@ class AddGameDialog(QDialog):
         layout.addRow(_("lbl_ai_chat_link"), self.ai_url_input)
 
         self.steam_input = QLineEdit()
-        self.steam_input.setPlaceholderText("Например: 108600 (Project Zomboid)")
-        layout.addRow("Steam ID (опционально):", self.steam_input)
+        self.steam_input.setPlaceholderText(_("placeholder_steam_id"))
+        layout.addRow(_("lbl_steam_id_optional"), self.steam_input)
 
         btn_layout = QHBoxLayout()
-        save_btn = QPushButton(_("btn_save", "Сохранить"))
+        save_btn = QPushButton(_("btn_save"))
         save_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton(_("btn_cancel", "Отмена"))
+        cancel_btn = QPushButton(_("btn_cancel"))
         cancel_btn.clicked.connect(self.reject)
         
         btn_layout.addWidget(save_btn)
@@ -46,7 +46,7 @@ class AddGameDialog(QDialog):
 
     def browse_folder(self):
         start_dir = self.config.get("renders_folder", "")
-        folder = QFileDialog.getExistingDirectory(self, "Выберите папку для игры", start_dir)
+        folder = QFileDialog.getExistingDirectory(self, _("title_select_game_folder"), start_dir)
         if folder:
             self.folder_input.setText(folder)
             self.manual_path = True 

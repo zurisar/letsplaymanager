@@ -7,24 +7,24 @@ from PyQt6.QtGui import QColor, QFont
 
 from core.config import _
 from database import (get_all_episodes_for_schedule, get_all_shorts_for_schedule, 
-                      update_episode_publish_date, update_short_field)
+                      update_episode_publish_date, update_short_field, get_episode_metadata)
 from gui.dialogs.calendar_dialog import CalendarDialog
 
 class ScheduleDialog(QDialog):
     def __init__(self, parent, config):
         super().__init__(parent)
-        self.setWindowTitle("Календарь публикаций")
+        self.setWindowTitle(_("title_schedule_dialog"))
         self.resize(750, 500)
         self.config = config
         
         layout = QVBoxLayout(self)
         
         # Инструкция для пользователя
-        help_lbl = QLabel("<i>Двойной клик по дате, чтобы назначить или изменить её. Неопубликованные видео находятся в начале списка.</i>")
+        help_lbl = QLabel(f"<i>{_('lbl_schedule_help')}</i>")
         layout.addWidget(help_lbl)
         
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Игра", "Номер эпизода / Шортс", "Дата публикации", "Готовность"])
+        self.table.setHorizontalHeaderLabels([_("col_game"), _("col_episode_short"), _("col_publish_date"), _("col_readiness")])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
@@ -42,7 +42,7 @@ class ScheduleDialog(QDialog):
         
         layout.addWidget(self.table)
         
-        close_btn = QPushButton("Закрыть")
+        close_btn = QPushButton(_("btn_close"))
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
         
@@ -52,7 +52,6 @@ class ScheduleDialog(QDialog):
         episodes = get_all_episodes_for_schedule()
         shorts = get_all_shorts_for_schedule()
         
-        desc_name = self.config.get("desc_name", "desc.txt")
         prev_name = self.config.get("preview_name", "preview.jpg")
         
         combined_list = []
@@ -60,10 +59,13 @@ class ScheduleDialog(QDialog):
         # Обработка эпизодов
         for ep_id, game_name, folder_path, ep_num, title, pub_date in episodes:
             ep_folder = os.path.join(folder_path, f"ep{ep_num}")
-            desc_path = os.path.join(ep_folder, desc_name)
             prev_path = os.path.join(ep_folder, prev_name)
             
-            has_desc = os.path.exists(desc_path) and os.path.getsize(desc_path) > 0
+            # Получаем метаданные из БД вместо файла
+            ep_meta = get_episode_metadata(ep_id)
+            has_desc = bool(ep_meta[1].strip()) # Индекс 1 отвечает за описание эпизода
+            
+            # Превью по-прежнему проверяем как файл на диске
             has_prev = os.path.exists(prev_path) and os.path.getsize(prev_path) > 1024
             
             is_ready = "✅" if (has_desc and has_prev) else "❌"
@@ -186,7 +188,7 @@ class ScheduleDialog(QDialog):
             item_type = item.data(Qt.ItemDataRole.UserRole + 1)
             
             current_date = item.text()
-            if current_date == "Не задана":
+            if current_date == _("lbl_not_set"):
                 current_date = ""
 
             dialog = CalendarDialog(self, current_date)

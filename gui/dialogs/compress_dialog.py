@@ -8,7 +8,7 @@ class CompressDialog(QDialog):
     def __init__(self, parent, config): 
         super().__init__(parent)
         self.config = config
-        self.setWindowTitle("Сжатие видео (Transcoding)")
+        self.setWindowTitle(_("title_compress"))
         self.resize(550, 380)
         
         layout = QFormLayout(self)
@@ -19,34 +19,34 @@ class CompressDialog(QDialog):
         file_layout = QHBoxLayout()
         self.file_input = QLineEdit()
         self.file_input.setReadOnly(True)
-        file_btn = QPushButton("Выбрать видео")
+        file_btn = QPushButton(_("btn_select_video"))
         file_btn.clicked.connect(self.select_file)
         file_layout.addWidget(self.file_input)
         file_layout.addWidget(file_btn)
-        layout.addRow("Исходный файл:", file_layout)
+        layout.addRow(f"{_('lbl_source_file')}:", file_layout)
 
         # 2. Информация о файле
-        self.info_label = QLabel("Выберите файл для анализа...")
-        layout.addRow("Информация:", self.info_label)
+        self.info_label = QLabel(_("lbl_select_file_for_analysis"))
+        layout.addRow(f"{_('lbl_info')}:", self.info_label)
 
         # 3. Выбор профиля
         self.profile_selector = QComboBox()
-        self.profile_selector.addItem("⚙️ Ручная настройка", userData="manual")
-        self.profile_selector.addItem("🚀 Черновик / Быстрый экспорт (H.264, 8 Mbps)", userData="draft")
-        self.profile_selector.addItem("🎬 YouTube 1080p Optimal (H.264, 15 Mbps, 60fps)", userData="youtube")
-        self.profile_selector.addItem("📦 Архив для монтажа / Vegas (HEVC, 30 Mbps, GOP 30)", userData="archive")
+        self.profile_selector.addItem(f"⚙️ {_('profile_manual')}", userData="manual")
+        self.profile_selector.addItem(f"🚀 {_('profile_draft')}", userData="draft")
+        self.profile_selector.addItem("🎬 YouTube 1080p Optimal (H.264, 15 Mbps, 60fps)", userData="youtube") 
+        self.profile_selector.addItem(f"📦 {_('profile_archive')}", userData="archive")
         self.profile_selector.currentIndexChanged.connect(self.on_profile_changed)
-        layout.addRow("Профиль:", self.profile_selector)
+        layout.addRow(f"{_('lbl_profile')}:", self.profile_selector)
 
         # 4. Выбор кодека
         self.codec_selector = QComboBox()
-        self.codec_selector.addItem("CPU (Обычный H.264)", userData="libx264")
+        self.codec_selector.addItem(f"CPU ({_('codec_regular')} H.264)", userData="libx264")
         self.codec_selector.addItem("AMD (H.264)", userData="h264_amf")
         self.codec_selector.addItem("NVIDIA (H.264)", userData="h264_nvenc")
         self.codec_selector.addItem("AMD (HEVC / H.265)", userData="hevc_amf")
         self.codec_selector.addItem("NVIDIA (HEVC / H.265)", userData="hevc_nvenc")
         self.codec_selector.setCurrentIndex(3)
-        layout.addRow("Кодек видео:", self.codec_selector)
+        layout.addRow(f"{_('lbl_video_codec')}:", self.codec_selector)
 
         # 5. Целевой битрейт
         self.bitrate_selector = QComboBox()
@@ -56,27 +56,27 @@ class CompressDialog(QDialog):
         
         bitrate_layout = QHBoxLayout()
         bitrate_layout.addWidget(self.bitrate_selector)
-        bitrate_layout.addWidget(QLabel("Mbps (Мбит/с)"))
-        layout.addRow("Целевой битрейт:", bitrate_layout)
+        bitrate_layout.addWidget(QLabel(_("lbl_mbps")))
+        layout.addRow(f"{_('lbl_target_bitrate')}:", bitrate_layout)
 
         # 6. FPS (Кадры в секунду)
         self.fps_selector = QComboBox()
-        self.fps_selector.addItem("Оригинал (не менять)", userData="original")
+        self.fps_selector.addItem(_("fps_original"), userData="original")
         self.fps_selector.addItem("30 fps", userData="30")
         self.fps_selector.addItem("60 fps", userData="60")
-        layout.addRow("Частота кадров (FPS):", self.fps_selector)
+        layout.addRow(f"{_('lbl_fps')}:", self.fps_selector)
 
         # 7. Прогноз размера
-        self.estimate_label = QLabel("Ожидаемый вес: 0 MB")
+        self.estimate_label = QLabel(f"{_('lbl_expected_size')}: 0 MB")
         self.estimate_label.setStyleSheet("font-weight: bold; color: #2e8b57;") 
-        layout.addRow("Прогноз:", self.estimate_label)
+        layout.addRow(f"{_('lbl_forecast')}:", self.estimate_label)
 
         # 8. Кнопки
         btn_layout = QHBoxLayout()
-        self.start_btn = QPushButton("Сжать видео")
+        self.start_btn = QPushButton(_("btn_compress_video"))
         self.start_btn.setEnabled(False) 
         self.start_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("Отмена")
+        cancel_btn = QPushButton(_("btn_cancel"))
         cancel_btn.clicked.connect(self.reject)
         
         btn_layout.addWidget(self.start_btn)

@@ -26,7 +26,7 @@ class ShortsManagerDialog(QDialog):
         self.config = config
         self.hostings = hostings
 
-        self.setWindowTitle(f"{_('title_shorts_manager')}: {game_name} - Эпизод {ep_number}")
+        self.setWindowTitle(f"{_('title_shorts_manager')}: {game_name} - {_('lbl_episode')} {ep_number}")
         self.resize(950, 500)
         layout = QVBoxLayout(self)
 
@@ -49,7 +49,7 @@ class ShortsManagerDialog(QDialog):
         editor_btn.setToolTip(_("tooltip_run_videoeditor"))
         editor_btn.clicked.connect(self.launch_editor)
 
-        cut_btn = QPushButton("✂️ Нарезать шортсы") # <--- НОВАЯ КНОПКА
+        cut_btn = QPushButton(f"✂️ {_('btn_cut_shorts')}") # <--- НОВАЯ КНОПКА
         cut_btn.clicked.connect(self.open_shorts_cutter)
         
         ai_btn = QPushButton(_("lbl_ai_chat"))
@@ -94,14 +94,18 @@ class ShortsManagerDialog(QDialog):
             dialog = ShortsCutterDialog(self, video_file)
             dialog.exec()
         else:
-            QMessageBox.warning(self, _("status_error"), "Исходное видео не найдено.")
+            QMessageBox.warning(self, _("msg_title_error"), _("msg_source_video_not_found"))
 
     def launch_editor(self):
         editor_path = self.config.get("video_editor_path", "")
         if os.path.exists(editor_path):
-            subprocess.Popen([editor_path])
+            try:
+                # Используем startfile вместо Popen
+                os.startfile(editor_path)
+            except Exception as e:
+                QMessageBox.critical(self, _("msg_title_error"), f"{_('msg_failed_to_start_editor')}:\n{e}")
         else:
-            QMessageBox.warning(self, _("status_error"), _("msg_videoeditor_path_not_set"))
+            QMessageBox.warning(self, _("msg_title_error"), _("msg_videoeditor_path_not_set"))
 
     def play_original(self):
         if not os.path.exists(self.ep_folder): return
@@ -109,7 +113,7 @@ class ShortsManagerDialog(QDialog):
             if f.endswith(('.mp4', '.mkv', '.avi')) and "shorts" not in f.lower():
                 os.startfile(os.path.join(self.ep_folder, f))
                 return
-        QMessageBox.warning(self, _("status_error"), _("msg_episode_file_not_found"))
+        QMessageBox.warning(self, _("msg_title_error"), _("msg_episode_file_not_found"))
 
     def update_table(self):
         shorts = get_shorts(self.ep_id)
@@ -184,33 +188,52 @@ class ShortsManagerDialog(QDialog):
         QMessageBox.warning(self, _("status_error"), _("msg_short_file_not_found"))
 
     def add_short(self):
-        start_dir = self.config.get("renders_folder", "")
-        file, ignored = QFileDialog.getOpenFileName(self, _("lbl_select_short"), start_dir, f"{_('lbl_video_files')} (*.mp4 *.mkv)")
-        if not file: return
+        # Если папка шортсов уже существует (например, после рендера из Kdenlive), открываем её.
+        # Иначе используем стандартную папку рендеров из конфигурации.
+        start_dir = self.shorts_folder if os.path.exists(self.shorts_folder) else self.config.get("renders_folder", "")
         
+        # Используем getOpenFileNames (с буквой 's' на конце) для выбора нескольких файлов
+        files, ignored = QFileDialog.getOpenFileNames(
+            self, 
+            _("lbl_select_short"), 
+            start_dir, 
+            f"{_('lbl_video_files')} (*.mp4 *.mkv)"
+        )
+        
+        if not files: 
+            return
+            
         os.makedirs(self.shorts_folder, exist_ok=True)
         shorts = get_shorts(self.ep_id)
-        next_num = max([s[1] for s in shorts] + [0]) + 1
         
-        filename, ext = os.path.splitext(file)
-        out_name = f"{self.game_name} - Ep.{self.ep_number} - Short {next_num}{ext}"
-        out_path = os.path.join(self.shorts_folder, out_name)
+        # Находим текущий максимальный номер шортса для этого эпизода
+        next_num = max([s[1] for s in shorts] + [0])
         
-        norm_in = os.path.normpath(file)
-        norm_out = os.path.normpath(out_path)
-        
-        if norm_in != norm_out:
-            try:
-                shutil.move(norm_in, norm_out)
-            except Exception as e:
-                QMessageBox.critical(self, _("status_error"), f"{_('lbl_video_convert_error')}:\n{e}")
-                return
-        
-        # Запрашиваем размер и время через родительское окно
-        size_str = self.parent().get_format_size(os.path.getsize(norm_out))
-        dur_str = self.parent().get_video_duration(norm_out)
-        
-        add_short_to_db(self.ep_id, next_num, size_str, dur_str)
+        for file in files:
+            next_num += 1 # Увеличиваем номер для каждого нового файла в цикле
+            
+            filename, ext = os.path.splitext(file)
+            out_name = f"{self.game_name} - Ep.{self.ep_number} - Short {next_num}{ext}"
+            out_path = os.path.join(self.shorts_folder, out_name)
+            
+            norm_in = os.path.normpath(file)
+            norm_out = os.path.normpath(out_path)
+            
+            # Если файл находится в другой папке или имеет другое имя — перемещаем/переименовываем
+            if norm_in != norm_out:
+                try:
+                    shutil.move(norm_in, norm_out)
+                except Exception as e:
+                    QMessageBox.critical(self, _("status_error"), f"{_('lbl_video_convert_error')} ({os.path.basename(file)}):\n{e}")
+                    continue # Пропускаем файл с ошибкой и переходим к следующему
+            
+            # Запрашиваем размер и время через родительское окно
+            size_str = self.parent().get_format_size(os.path.getsize(norm_out))
+            dur_str = self.parent().get_video_duration(norm_out)
+            
+            add_short_to_db(self.ep_id, next_num, size_str, dur_str)
+            
+        # Обновляем таблицы один раз после окончания цикла обработки всех файлов
         self.update_table()
         self.parent().update_table()
 
@@ -225,7 +248,7 @@ class ShortsManagerDialog(QDialog):
                 
         elif column == 4:
             cur = self.table.item(row, 4).text()
-            if cur == "Добавить теги": cur = ""
+            if cur == _("lbl_add_tags"): cur = ""
             new_t, ok = QInputDialog.getText(self, _("lbl_tags"), _("lbl_enter_tags"), QLineEdit.EchoMode.Normal, cur)
             if ok: update_short_field(s_id, 'tags', new_t.strip())
                 

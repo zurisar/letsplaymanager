@@ -4,13 +4,15 @@ import json
 import logging
 import shutil
 import updater
-from database import DB_NAME, APP_DATA_DIR
 
-APP_VERSION = "0.6"
+# Импортируем сам модуль database, чтобы брать из него динамический db_path
+import database
+from database import APP_DATA_DIR
+
+APP_VERSION = "0.7"
 
 # Теперь config.py лежит в папке core, поэтому BASE_DIR это папка уровнем выше
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_FILE = os.path.join(APP_DATA_DIR, 'config.json')
 LOG_FILE = os.path.join(BASE_DIR, 'run.log')
 
 # --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
@@ -32,7 +34,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 sys.excepthook = handle_exception
 
 # --- КОНФИГУРАЦИЯ ---
-def load_config():
+def load_config(config_filename="config.json"):
     default_config = {
         "version": APP_VERSION,
         "language": "ru_ru",
@@ -42,21 +44,24 @@ def load_config():
         "preview_name": "preview.jpg",
         "recordings_folder": "", 
         "renders_folder": "",     
-        "video_editor_path": "" 
+        "video_editor_path": "",
+        "default_codec": "h264_cpu"
     }
     
-    # Перенос старого конфига (оставляем для обратной совместимости на один патч)
+    config_path = os.path.join(APP_DATA_DIR, config_filename)
+    
+    # Перенос старого конфига (оставляем для обратной совместимости, работает для профиля по умолчанию)
     old_config_path = os.path.join(BASE_DIR, "config.json")
-    if os.path.exists(old_config_path) and not os.path.exists(CONFIG_FILE):
-        shutil.copy2(old_config_path, CONFIG_FILE)
+    if config_filename == "config.json" and os.path.exists(old_config_path) and not os.path.exists(config_path):
+        shutil.copy2(old_config_path, config_path)
         logging.info("Старый конфиг успешно перенесен в Документы.")
     
-    if not os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+    if not os.path.exists(config_path):
+        with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(default_config, f, indent=4, ensure_ascii=False)
         return default_config
         
-    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+    with open(config_path, 'r', encoding='utf-8') as f:
         try:
             config = json.load(f)
         except json.JSONDecodeError:
@@ -65,17 +70,19 @@ def load_config():
     old_version = config.get("version", "0.1")
     if old_version < APP_VERSION:
         logging.info(f"Обнаружена новая версия программы: {APP_VERSION}. Запуск миграций...")
-        updater.apply_migrations(DB_NAME, old_version, APP_VERSION)
+        # Используем динамический путь к БД из модуля database
+        updater.apply_migrations(database.db_path, old_version, APP_VERSION)
         config["version"] = APP_VERSION
         for key, value in default_config.items():
             if key not in config:
                 config[key] = value
-        save_config(config)
+        save_config(config, config_filename)
 
     return config
 
-def save_config(config):
-    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+def save_config(config, config_filename="config.json"):
+    config_path = os.path.join(APP_DATA_DIR, config_filename)
+    with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
 
 # --- ЛОКАЛИЗАЦИЯ ---

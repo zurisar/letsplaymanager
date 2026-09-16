@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QDialog, QFormLayout, QComboBox, QHBoxLayout, QLineEdit, QPushButton, QFileDialog
+from PyQt6.QtWidgets import QDialog, QFormLayout, QComboBox, QHBoxLayout, QLineEdit, QPushButton, QFileDialog, QLabel
 from core.config import _, save_config
 from gui.dialogs.manage_hostings_dialog import ManageHostingsDialog
 
@@ -24,7 +24,7 @@ class SettingsDialog(QDialog):
 
         recordings_layout = QHBoxLayout()
         self.recordings_input = QLineEdit(self.config.get("recordings_folder", ""))
-        rec_btn = QPushButton(_("btn_browse", "Обзор"))
+        rec_btn = QPushButton(_("btn_browse"))
         rec_btn.clicked.connect(lambda: self.browse_folder(self.recordings_input))
         recordings_layout.addWidget(self.recordings_input)
         recordings_layout.addWidget(rec_btn)
@@ -32,11 +32,31 @@ class SettingsDialog(QDialog):
 
         renders_layout = QHBoxLayout()
         self.renders_input = QLineEdit(self.config.get("renders_folder", ""))
-        ren_btn = QPushButton(_("btn_browse", "Обзор"))
+        ren_btn = QPushButton(_("btn_browse"))
         ren_btn.clicked.connect(lambda: self.browse_folder(self.renders_input))
         renders_layout.addWidget(self.renders_input)
         renders_layout.addWidget(ren_btn)
         layout.addRow(_("lbl_video_render_folder"), renders_layout)
+
+        # --- Выбор кодека по умолчанию ---
+        codec_layout = QHBoxLayout()
+
+        self.codec_combo = QComboBox()
+        # Сохраняем техническое имя кодека в userData (второй аргумент)
+        self.codec_combo.addItem("H.264 (CPU)", "h264_cpu")
+        self.codec_combo.addItem("H.264 (NVIDIA NVENC)", "h264_nvenc")
+        self.codec_combo.addItem("H.264 (AMD AMF)", "h264_amf")
+        self.codec_combo.addItem("H.265 / HEVC (NVIDIA NVENC)", "hevc_nvenc")
+        self.codec_combo.addItem("H.265 / HEVC (AMD AMF)", "hevc_amf")
+
+        # Устанавливаем текущее значение из конфига
+        current_codec = self.config.get("default_codec", "h264_cpu")
+        index = self.codec_combo.findData(current_codec)
+        if index >= 0:
+            self.codec_combo.setCurrentIndex(index)
+
+        codec_layout.addWidget(self.codec_combo)
+        layout.addRow(_("lbl_default_codec"), codec_layout)
 
         text_editor_layout = QHBoxLayout()
         self.text_editor_input = QLineEdit(self.config.get("notepad_path", "notepad.exe"))
@@ -56,7 +76,7 @@ class SettingsDialog(QDialog):
 
         video_editor_layout = QHBoxLayout()
         self.video_editor_input = QLineEdit(self.config.get("video_editor_path", ""))
-        video_editor_btn = QPushButton("Обзор")
+        video_editor_btn = QPushButton(_("btn_browse"))
         video_editor_btn.clicked.connect(self.browse_video_editor)
         video_editor_layout.addWidget(self.video_editor_input)
         video_editor_layout.addWidget(video_editor_btn)
@@ -83,17 +103,17 @@ class SettingsDialog(QDialog):
         layout.addRow(btn_layout)
 
     def browse_gimp(self):
-        file, ignored = QFileDialog.getOpenFileName(self, _("title_select_gimp"), "", "Executable Files (*.exe)")
+        file, ignored = QFileDialog.getOpenFileName(self, _("title_select_gimp"), "", _('filter_executable'))
         if file:
             self.gimp_input.setText(file)
 
     def browse_text_editor(self):
-        file, ignored = QFileDialog.getOpenFileName(self, _("title_select_editor"), "", "Executable Files (*.exe)")
+        file, ignored = QFileDialog.getOpenFileName(self, _("title_select_editor"), "", _('filter_executable'))
         if file:
             self.text_editor_input.setText(file)
 
     def browse_video_editor(self):
-        file, ignored = QFileDialog.getOpenFileName(self, _("lbl_select_videoeditor_exe"), "", "Executable (*.exe)")
+        file, ignored = QFileDialog.getOpenFileName(self, _("lbl_select_videoeditor_exe"), "", _('filter_executable'))
         if file:
             self.video_editor_input.setText(file)
 
@@ -110,6 +130,7 @@ class SettingsDialog(QDialog):
         self.config["language"] = self.lang_selector.currentData()
         self.config["recordings_folder"] = self.recordings_input.text().strip()
         self.config["renders_folder"] = self.renders_input.text().strip()
+        self.config["default_codec"] = self.codec_combo.currentData()
         self.config["notepad_path"] = self.text_editor_input.text().strip()
         self.config["gimp_path"] = self.gimp_input.text().strip()
         self.config["video_editor_path"] = self.video_editor_input.text().strip()

@@ -9,7 +9,7 @@ from database import get_videohostings, add_videohosting, delete_videohosting
 class ManageHostingsDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
-        self.setWindowTitle(_("title_manage_hostings", "Управление видеохостингами"))
+        self.setWindowTitle(_("title_manage_hostings"))
         self.resize(450, 300)
         
         layout = QVBoxLayout(self)

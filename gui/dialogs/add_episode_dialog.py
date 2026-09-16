@@ -15,14 +15,14 @@ class AddEpisodeDialog(QDialog):
         file_layout = QHBoxLayout()
         self.file_input = QLineEdit()
         self.file_input.setReadOnly(True)
-        file_btn = QPushButton("Выбрать файл .mkv")
+        file_btn = QPushButton(_("btn_select_file"))
         file_btn.clicked.connect(self.select_file)
         file_layout.addWidget(self.file_input)
         file_layout.addWidget(file_btn)
         layout.addRow(_("lbl_source_file"), file_layout)
 
         self.game_selector = QComboBox()
-        for game_id, name, folder_path, ai_url, steam_id in games:
+        for game_id, name, folder_path, ai_url, steam_id, desc_template, default_tags in games:
             self.game_selector.addItem(name, userData={'id': game_id, 'path': folder_path})
             if game_id == current_game_id:
                 self.game_selector.setCurrentIndex(self.game_selector.count() - 1)
@@ -37,9 +37,15 @@ class AddEpisodeDialog(QDialog):
         self.game_selector.currentIndexChanged.connect(self.update_episode_number)
         self.update_episode_number()
 
-        self.convert_checkbox = QCheckBox(_("lbl_push_video_over_ffmpeg"))
-        self.convert_checkbox.setChecked(True) 
-        layout.addRow(f"{_('lbl_action')}:", self.convert_checkbox)
+        # self.convert_checkbox = QCheckBox(_("lbl_push_video_over_ffmpeg"))
+        # self.convert_checkbox.setChecked(True) 
+        self.process_mode_combo = QComboBox()
+        self.process_mode_combo.addItems([
+            _("mode_move_only"), 
+            _("mode_fast_remux"), 
+            _("mode_optimize_edit")
+        ])
+        layout.addRow(f"{_('lbl_action')}:", self.process_mode_combo)
 
         btn_layout = QHBoxLayout()
         self.add_btn = QPushButton(_("btn_add_and_convert"))
@@ -53,13 +59,23 @@ class AddEpisodeDialog(QDialog):
 
     def select_file(self):
         start_dir = self.config.get("recordings_folder", "") 
-        file, ignored = QFileDialog.getOpenFileName(self, "Выберите исходное видео", start_dir, "Видеофайлы (*.mkv *.mp4 *.avi)")
+        # Добавляем ключи перевода для диалога выбора файла
+        file, ignored = QFileDialog.getOpenFileName(
+            self, 
+            _("title_select_source_video"), 
+            start_dir, 
+            f"{_('lbl_video_files')} (*.mkv *.mp4 *.avi)"
+        )
         if file:
             self.file_input.setText(file)
+            
+            # --- ИСПРАВЛЕННАЯ ЛОГИКА ---
+            # Если это уже mp4, ставим индекс 0 ("Только перемещение")
             if file.lower().endswith('.mp4'):
-                self.convert_checkbox.setChecked(False)
+                self.process_mode_combo.setCurrentIndex(0)
+            # Если это mkv или avi, ставим индекс 1 ("Быстрый Remux")
             else:
-                self.convert_checkbox.setChecked(True)
+                self.process_mode_combo.setCurrentIndex(1)
 
     def update_episode_number(self):
         current_index = self.game_selector.currentIndex()
