@@ -496,6 +496,8 @@ class LetsPlayManager(QMainWindow):
         
         # --- НОВЫЙ ПУНКТ МЕНЮ ---
         meta_action = menu.addAction(f"📝 {_('menu_meta_templates')}")
+        # Добавляем действие копирования названия
+        copy_title_action = menu.addAction(f"📋 {_('menu_copy_title', 'Копировать название')}")
         copy_menu = menu.addMenu(f"📋 {_('menu_copy_desc_for')}")
         hostings = get_videohostings()
         
@@ -519,6 +521,8 @@ class LetsPlayManager(QMainWindow):
         if action == meta_action:
             self.open_metadata_dialog(ep_id, ep_number)
             logging.info(f"Метаданные для эпизода {ep_number} успешно сохранены в БД.")
+        elif action == copy_title_action: # <-- Обработка копирования названия
+            self.copy_title_to_clipboard(ep_id, game_name, ep_number)
         elif action in copy_actions:
             hosting_key = copy_actions[action]
             self.copy_desc_to_clipboard(ep_id, hosting_key, game_name, ep_number, game_data)
@@ -1454,7 +1458,7 @@ class LetsPlayManager(QMainWindow):
         links_part = []
         if game_playlist: links_part.append(f"{_('lbl_playlist')}: {game_playlist}")
         if profile_links: links_part.append(profile_links)
-        if links_part: parts.append("🔗 {_('lbl_links')}:\n" + "\n".join(links_part))
+        if links_part: parts.append(f"🔗 {_('lbl_links')}:\n" + "\n".join(links_part))
         
         if profile_cta: parts.append(profile_cta)
         if unique_tags: parts.append(unique_tags)
@@ -1465,6 +1469,23 @@ class LetsPlayManager(QMainWindow):
         QApplication.clipboard().setText(text_to_copy.strip())
         import logging
         logging.info(f"Описание для '{hosting_key}' успешно скопировано в буфер обмена.")
+
+    def copy_title_to_clipboard(self, ep_id, game_name, ep_number):
+        from database import get_episode_metadata
+        ep_meta = get_episode_metadata(ep_id)
+        
+        # Безопасное извлечение названия (если данных еще нет)
+        ep_title = ep_meta[0] if ep_meta else ""
+        
+        if ep_title:
+            full_title = f"{ep_title} | {game_name} ({_('lbl_episode')} {ep_number})"
+        else:
+            full_title = f"{game_name} | {_('lbl_walkthrough', 'Прохождение')} ({_('lbl_episode')} {ep_number})"
+            
+        QApplication.clipboard().setText(full_title)
+        
+        import logging
+        logging.info(f"Название эпизода {ep_number} успешно скопировано в буфер обмена.")
 
     def center_on_screen(self):
         screen = QApplication.primaryScreen()
