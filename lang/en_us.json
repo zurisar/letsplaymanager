@@ -316,6 +316,9 @@
     "title_select_episode": "Select Episode",
     "lbl_choose_episode": "Choose an episode:",
     "msg_no_available_episodes": "No available episodes.",
-    "filter_executable": "Executable file (.exe)"
+    "filter_executable": "Executable file (.exe)",
+    "lbl_title": "Title",
+    "lbl_videohosting": "Video hosting",
+    "btn_close": "Close"
 
 }

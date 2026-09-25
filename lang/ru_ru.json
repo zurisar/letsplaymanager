@@ -318,6 +318,9 @@
     "lbl_choose_episode": "Выберите эпизод:",
     "msg_no_available_episodes": "Нет доступных эпизодов.",
     "filter_executable": "Исполняемый файл (.exe)",
+    "lbl_title": "Название",
+    "lbl_videohosting": "Видеохостинг",
+    "btn_close": "Закрыть",
 
 
 
