@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QHeaderView, QPushButton, QLabel)
+                             QHeaderView, QPushButton, QLabel, QCalendarWidget, QHBoxLayout)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
@@ -14,7 +14,7 @@ class ScheduleDialog(QDialog):
     def __init__(self, parent, config):
         super().__init__(parent)
         self.setWindowTitle(_("title_schedule_dialog"))
-        self.resize(750, 500)
+        self.resize(1150, 500)
         self.config = config
         
         layout = QVBoxLayout(self)
@@ -40,7 +40,22 @@ class ScheduleDialog(QDialog):
         # Подключаем двойной клик для редактирования даты
         self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
         
-        layout.addWidget(self.table)
+        # ==================== НОВЫЙ БЛОК ====================
+        # Создаем горизонтальный слой для таблицы и календаря
+        table_and_calendar_layout = QHBoxLayout()
+        table_and_calendar_layout.addWidget(self.table, stretch=1) # Таблица тянется
+        
+        # Настраиваем визуальный календарь
+        self.reference_calendar = QCalendarWidget()
+        self.reference_calendar.setGridVisible(True)
+        self.reference_calendar.setFixedWidth(320)
+        self.reference_calendar.setSelectionMode(QCalendarWidget.SelectionMode.NoSelection)
+        
+        table_and_calendar_layout.addWidget(self.reference_calendar, stretch=0)
+        
+        # Добавляем горизонтальный блок в основной вертикальный слой окна
+        layout.addLayout(table_and_calendar_layout)
+        # ====================================================
         
         close_btn = QPushButton(_("btn_close"))
         close_btn.clicked.connect(self.accept)
