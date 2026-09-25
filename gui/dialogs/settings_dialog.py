@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QDialog, QFormLayout, QComboBox, QHBoxLayout, QLineEdit, QPushButton, QFileDialog, QLabel
-from core.config import _, save_config
+from PyQt6.QtWidgets import QDialog, QFormLayout, QComboBox, QHBoxLayout, QLineEdit, QPushButton, QFileDialog, QLabel, QApplication
+from core.config import _, save_config, apply_theme
 from gui.dialogs.manage_hostings_dialog import ManageHostingsDialog
 
 class SettingsDialog(QDialog):
@@ -21,6 +21,19 @@ class SettingsDialog(QDialog):
             self.lang_selector.setCurrentIndex(index)
             
         layout.addRow("Язык / Language:", self.lang_selector)
+
+        # --- ВЫБОР ТЕМЫ ---
+        self.theme_selector = QComboBox()
+        self.theme_selector.addItem(_("theme_dark"), userData="dark")
+        self.theme_selector.addItem(_("theme_light"), userData="light")
+        
+        current_theme = self.config.get("theme", "dark")
+        theme_index = self.theme_selector.findData(current_theme)
+        if theme_index >= 0:
+            self.theme_selector.setCurrentIndex(theme_index)
+            
+        layout.addRow(_("lbl_theme"), self.theme_selector)
+        # ------------------
 
         recordings_layout = QHBoxLayout()
         self.recordings_input = QLineEdit(self.config.get("recordings_folder", ""))
@@ -128,6 +141,7 @@ class SettingsDialog(QDialog):
 
     def accept(self):
         self.config["language"] = self.lang_selector.currentData()
+        self.config["theme"] = self.theme_selector.currentData()
         self.config["recordings_folder"] = self.recordings_input.text().strip()
         self.config["renders_folder"] = self.renders_input.text().strip()
         self.config["default_codec"] = self.codec_combo.currentData()
@@ -138,4 +152,10 @@ class SettingsDialog(QDialog):
         self.config["preview_name"] = self.prev_input.text().strip()
 
         save_config(self.config)
+        apply_theme(QApplication.instance(), self.config["theme"])
+
+        # Заставляем главную таблицу перерисовать ячейки с новыми цветами
+        if hasattr(self.parent(), "update_table"):
+            self.parent().update_table()
+            
         super().accept()

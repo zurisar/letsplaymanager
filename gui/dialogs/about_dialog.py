@@ -15,15 +15,22 @@ class AboutDialog(QDialog):
         info_label.setOpenExternalLinks(True) 
         info_label.setWordWrap(True)
         
+        # Получаем текущую тему из родительского окна (main_window)
+        current_theme = parent.config.get("theme", "dark") if hasattr(parent, 'config') else "dark"
+        
+        # Подбираем контрастные цвета
+        header_color = "#ffffff" if current_theme == "dark" else "#2c3e50"
+        link_color = "#5dade2" if current_theme == "dark" else "#2980b9" # Более светлый синий для ссылок
+        
         text = f"""
-        <h2 style='text-align: center; color: #2c3e50;'>LetsPlayManager v{APP_VERSION}</h2>
+        <h2 style='text-align: center; color: {header_color};'>LetsPlayManager v{APP_VERSION}</h2>
         <p style='text-align: center;'>{_('about_desc')}</p>
         <hr>
         <p><b>{_('about_features_title')}:</b><br>
         {_('about_features_text')}</p>
         <p><b>{_('about_links_title')}:</b><br>
-        🐙 <a href='https://github.com/zurisar/letsplaymanager' style='color: #2980b9;'>{_('about_github')}</a><br>
-        🟦 <a href='https://vk.ru/zarubagames' style='color: #2980b9;'>{_('about_vk')}</a></p>
+        🐙 <a href='https://github.com/zurisar/letsplaymanager' style='color: {link_color};'>{_('about_github')}</a><br>
+        🟦 <a href='https://vk.ru/zarubagames' style='color: {link_color};'>{_('about_vk')}</a></p>
         <br>
         <p style='text-align: center; font-size: 10px; color: gray;'>{_('about_footer')}</p>
         """

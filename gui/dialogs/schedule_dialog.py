@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QTableWidget, QTableWidgetIte
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
-from core.config import _
+from core.config import _, get_color
 from database import (get_all_episodes_for_schedule, get_all_shorts_for_schedule, 
                       update_episode_publish_date, update_short_field, get_episode_metadata)
 from gui.dialogs.calendar_dialog import CalendarDialog
@@ -70,6 +70,10 @@ class ScheduleDialog(QDialog):
         prev_name = self.config.get("preview_name", "preview.jpg")
         
         combined_list = []
+
+        current_theme = self.config.get("theme", "dark")
+        past_bg = get_color("past_date", current_theme)
+        future_bg = get_color("future_date", current_theme)
         
         # Обработка эпизодов
         for ep_id, game_name, folder_path, ep_num, title, pub_date in episodes:
@@ -150,11 +154,9 @@ class ScheduleDialog(QDialog):
                     # Проходимся по всем ячейкам текущей строки, чтобы применить стиль
                     for cell_item in (game_item, title_item, date_item, ready_item):
                         if pub_date < today:
-                            # Прошлое — Голубой
-                            cell_item.setBackground(QColor("#add8e6"))
+                            cell_item.setBackground(past_bg)
                         elif pub_date > today:
-                            # Будущее — Желтый (светло-желтый для читаемости)
-                            cell_item.setBackground(QColor("#ffffe0"))
+                            cell_item.setBackground(future_bg)
                         elif pub_date == today:
                             # Сегодня — Жирный шрифт
                             font = cell_item.font()

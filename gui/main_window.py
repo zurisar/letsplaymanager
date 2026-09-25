@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt6.QtGui import (QColor, QAction, QIcon)
 
 # --- НАШИ МОДУЛИ ---
-from core.config import _, load_config, save_config, load_language, APP_VERSION, BASE_DIR
+from core.config import _, load_config, save_config, load_language, APP_VERSION, BASE_DIR, get_color
 from core.ffmpeg_worker import FFmpegWorker, get_tool_path
 from core.update_checker import UpdateCheckerThread
 
@@ -104,15 +104,6 @@ class LetsPlayManager(QMainWindow):
         self.delete_game_btn.clicked.connect(self.delete_current_game)
         top_panel.addWidget(self.delete_game_btn)
         # -----------------------------
-
-        # Кнопка открытия настроек
-        self.settings_btn = QPushButton(_("btn_settings"))
-        self.settings_btn.clicked.connect(self.open_settings)
-        top_panel.addWidget(self.settings_btn)
-
-        self.about_btn = QPushButton(_("btn_about"))
-        self.about_btn.clicked.connect(self.open_about)
-        top_panel.addWidget(self.about_btn)
 
         # Пружина, которая прижмет все элементы панели к левому краю
         top_panel.addStretch() 
@@ -208,7 +199,6 @@ class LetsPlayManager(QMainWindow):
         game_menu.addAction(add_game_act)
         
         edit_game_act = QAction(_("menu_edit_game"), self)
-        # Если у тебя есть метод редактирования, замени None на self.edit_game
         edit_game_act.triggered.connect(self.edit_current_game) 
         game_menu.addAction(edit_game_act)
         
@@ -229,14 +219,14 @@ class LetsPlayManager(QMainWindow):
         shorts_menu = self.menu_bar.addMenu(_("menu_shorts"))
         
         shorts_manager_act = QAction(_("menu_shorts_manager"), self)
-        shorts_manager_act.triggered.connect(self.open_shorts_manager) # Твой метод вызова менеджера
+        shorts_manager_act.triggered.connect(self.open_shorts_manager)
         shorts_menu.addAction(shorts_manager_act)
 
         # --- 4. Меню "Инструменты" ---
         tools_menu = self.menu_bar.addMenu(_("menu_tools"))
         
         transcoder_act = QAction(_("menu_transcoder"), self)
-        transcoder_act.triggered.connect(self.show_compress_dialog) # Метод вызова транскодера
+        transcoder_act.triggered.connect(self.show_compress_dialog)
         tools_menu.addAction(transcoder_act)
         
         schedule_act = QAction(_("menu_publish_calendar"), self)
@@ -247,11 +237,11 @@ class LetsPlayManager(QMainWindow):
         settings_menu = self.menu_bar.addMenu(_("menu_settings"))
         
         app_settings_act = QAction(_("menu_app_settings"), self)
-        app_settings_act.triggered.connect(self.open_settings) # Если есть окно настроек
+        app_settings_act.triggered.connect(self.open_settings)
         settings_menu.addAction(app_settings_act)
         
         profile_settings_act = QAction(_("menu_profile_manager"), self)
-        profile_settings_act.triggered.connect(self.open_profile_settings) # Будущий метод
+        profile_settings_act.triggered.connect(self.open_profile_settings)
         settings_menu.addAction(profile_settings_act)
 
         # --- 6. Меню "О программе" ---
@@ -268,7 +258,6 @@ class LetsPlayManager(QMainWindow):
         about_menu.addAction(github_act)
         
         vk_act = QAction(_("menu_vk_group"), self)
-        # Замени ссылку на свою реальную группу VK
         vk_act.triggered.connect(lambda: webbrowser.open("https://vk.ru/zarubagames")) 
         about_menu.addAction(vk_act)
 
@@ -987,6 +976,7 @@ class LetsPlayManager(QMainWindow):
         game_id = game_data['id']
         folder_path = game_data['path']
         ai_url = game_data.get('ai_url', '')
+        current_theme = self.config.get("theme", "dark")
 
         # --- БЛОКИРОВКА АРХИВОВ ---
         if is_game_archived(game_id):
@@ -1000,7 +990,8 @@ class LetsPlayManager(QMainWindow):
         # Подсветка кнопки ИИ
         if ai_url:
             self.ai_chat_btn.setText(_("lbl_ai_chat_open"))
-            self.ai_chat_btn.setStyleSheet("background-color: #add8e6; font-weight: bold;") # Голубая
+            bg_hex = get_color("deleted_folder", current_theme).name()
+            self.ai_chat_btn.setStyleSheet(f"background-color: {bg_hex}; font-weight: bold;")
         else:
             self.ai_chat_btn.setText(_("lbl_ai_chat_add"))
             self.ai_chat_btn.setStyleSheet("") # Обычный цвет
@@ -1056,7 +1047,7 @@ class LetsPlayManager(QMainWindow):
             ep_item.setData(Qt.ItemDataRole.UserRole + 2, ep_number)
 
             if not folder_exists:
-                ep_item.setBackground(QColor("#add8e6"))
+                ep_item.setBackground(get_color("deleted_folder", current_theme))
                 ep_item.setToolTip(_("tooltip_sources_deleted_from_disk"))
             self.table.setItem(row_idx, 0, ep_item)
 
@@ -1173,8 +1164,6 @@ class LetsPlayManager(QMainWindow):
                 self.table.setCellWidget(row_idx, 5, prev_btn)
 
                 pub_item = QTableWidgetItem(pub_date if pub_date else _("lbl_not_set"))
-                if not folder_exists:
-                    pub_item.setBackground(QColor("#add8e6"))
                 self.table.setItem(row_idx, 6, pub_item)
 
                 # --- КОЛОНКА ШОРТСОВ ---
@@ -1203,9 +1192,12 @@ class LetsPlayManager(QMainWindow):
 
                 shorts_item  = QTableWidgetItem("-")
 
-                # Красим их ВСЕ в голубой
+                # Получаем цвет из нашей глобальной палитры
+                deleted_bg = get_color("deleted_folder", current_theme)
+
+                # Красим их ВСЕ в нужный цвет темы
                 for it in (size_item, dur_item, media_item, desc_item, prev_item, pub_item, shorts_item):
-                    it.setBackground(QColor("#add8e6"))
+                    it.setBackground(deleted_bg)
 
                 self.table.setItem(row_idx, 1, size_item)
                 self.table.setItem(row_idx, 2, dur_item)
@@ -1236,7 +1228,8 @@ class LetsPlayManager(QMainWindow):
 
                 if current_url:
                     link_btn.setText("🌐")
-                    link_btn.setStyleSheet("background-color: #add8e6;") # Голубой цвет, если есть
+                    bg_hex = get_color("deleted_folder", current_theme).name()
+                    link_btn.setStyleSheet(f"background-color: {bg_hex};")
                     link_btn.setToolTip(f"{_('tooltip_watch_on')} {h_display_name}\n{_("lbl_open_change")}")
                     link_btn.clicked.connect(lambda checked, url=current_url: webbrowser.open(url))
                 else:

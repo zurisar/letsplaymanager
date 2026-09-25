@@ -2,11 +2,12 @@ import sys
 import os
 import logging
 from PyQt6.QtWidgets import QApplication, QDialog
+from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import QTimer
 
 # Подтягиваем базовые настройки
 from core.profile_manager import ProfileManager
-from core.config import setup_logging, handle_exception, load_config, BASE_DIR
+from core.config import setup_logging, handle_exception, load_config, BASE_DIR, apply_theme
 from database import init_db, set_db_filename
 
 # Подтягиваем главное окно
@@ -23,7 +24,22 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    splash_image_path = os.path.join(BASE_DIR, "assets", "letsplaymanager_title.jpg")
+    # Применяем темную тему ДО показа сплеш-скрина и выбора профиля
+    apply_theme(app, "dark")
+
+    if getattr(sys, 'frozen', False):
+        # Если это собранный exe, берем папку, где лежит сам .exe
+        base_path = os.path.dirname(sys.executable)
+    else:
+        # Если запуск из исходников, используем BASE_DIR
+        base_path = BASE_DIR
+        
+    splash_image_path = os.path.join(base_path, "assets", "letsplaymanager_title.jpg")
+    icon_path = os.path.join(base_path, "assets", "icon.ico")
+    
+    # Устанавливаем иконку для всех окон приложения
+    app.setWindowIcon(QIcon(icon_path))
+
     splash = FadeSplashScreen(splash_image_path)
     splash.show()
     
@@ -60,6 +76,9 @@ def main():
 
     # 4. Загружаем конфигурацию конкретно для выбранного профиля
     config = load_config(current_profile['config_file'])
+
+    # Переопределяем тему, если в настройках пользователя стоит "light"
+    apply_theme(app, config.get("theme", "dark"))
 
     window = LetsPlayManager()
 

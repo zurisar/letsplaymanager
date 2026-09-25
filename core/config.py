@@ -5,6 +5,10 @@ import logging
 import shutil
 import updater
 
+# Добавляем импорты для работы с темами
+from PyQt6.QtGui import QPalette, QColor
+from PyQt6.QtCore import Qt
+
 # Импортируем сам модуль database, чтобы брать из него динамический db_path
 import database
 from database import APP_DATA_DIR
@@ -38,6 +42,7 @@ def load_config(config_filename="config.json"):
     default_config = {
         "version": APP_VERSION,
         "language": "ru_ru",
+        "theme": "dark",
         "gimp_path": r"C:\Program Files\GIMP 2\bin\gimp-2.10.exe",
         "notepad_path": "notepad.exe",
         "desc_name": "desc.txt",
@@ -105,3 +110,43 @@ def load_language(lang_code):
 
 def _(key, default_text=""):
     return TRANSLATIONS.get(key, default_text or key)
+
+
+# --- ТЕМЫ ОФОРМЛЕНИЯ ---
+def apply_theme(app, theme_name="dark"):
+    app.setStyle("Fusion")
+    
+    if theme_name == "dark":
+        dark_palette = QPalette()
+        dark_palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        dark_palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
+        dark_palette.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
+        dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+        
+        dark_palette.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
+        dark_palette.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.white)
+        dark_palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
+        
+        dark_palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        dark_palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
+        dark_palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
+        
+        dark_palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+        dark_palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
+        
+        app.setPalette(dark_palette)
+    else:
+        app.setPalette(app.style().standardPalette())
+
+# --- ПАЛИТРА ИНТЕРФЕЙСА ---
+THEME_COLORS = {
+    # Ключ: {"light": "HEX", "dark": "HEX"}
+    "deleted_folder": {"light": "#add8e6", "dark": "#1f425c"},
+    "past_date": {"light": "#add8e6", "dark": "#1f425c"},
+    "future_date": {"light": "#ffffe0", "dark": "#4a451c"},
+}
+
+def get_color(color_key, current_theme="dark"):
+    """Возвращает QColor на основе ключа и текущей темы"""
+    hex_code = THEME_COLORS.get(color_key, {}).get(current_theme, "#000000")
+    return QColor(hex_code)
