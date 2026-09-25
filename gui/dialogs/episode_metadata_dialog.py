@@ -75,42 +75,59 @@ class EpisodeMetadataDialog(QDialog):
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(15, 0, 0, 0)
         
-        right_layout.addWidget(QLabel(_("lbl_preview")))
+        # --- 1. Аннотация ---
+        hint_label = QLabel(_("lbl_copy_hint", "<i>Нажатие по кнопкам ниже копирует соответствующий текст в буфер обмена</i>"))
+        hint_label.setTextFormat(Qt.TextFormat.RichText)
+        hint_label.setStyleSheet("color: #888888; margin-bottom: 5px;")
+        right_layout.addWidget(hint_label)
 
+        # --- 2. Кнопка копирования названия (теперь ВЫШЕ предпросмотра) ---
         header_layout = QHBoxLayout()
-        # Кнопка копирования названия
         self.btn_copy_title = QPushButton(f"📋 {_('lbl_title')}")
         self.btn_copy_title.clicked.connect(self.copy_title_only)
         header_layout.addWidget(self.btn_copy_title)
-        
+        header_layout.addStretch() # Прижимаем кнопку влево, чтобы она не растягивалась на всю ширину
         right_layout.addLayout(header_layout)
+
+        # Надпись Предпросмотр
+        right_layout.addWidget(QLabel(_("lbl_preview")))        
         
         # Используем QTextBrowser для режима "только чтение" с поддержкой форматирования
         self.preview_browser = QTextBrowser()
         self.preview_browser.setStyleSheet("""
             QTextBrowser {
                 background-color: #1e1e1e; 
-                color: #e0e0e0; /* Светло-серый текст для контраста */
+                color: #e0e0e0; 
                 border: 1px solid #3a3a3a; 
                 border-radius: 4px;
                 padding: 10px;
-                font-size: 13px; /* Можно немного увеличить для удобства */
+                font-size: 13px; 
                 font-family: Consolas, monospace;
             }
         """)
         right_layout.addWidget(self.preview_browser)
         
+        # --- 3. Нижняя панель (Видеохостинг + Кнопки) ---
         bottom_layout = QHBoxLayout()
         
-        # 1. Селектор платформы
-        bottom_layout.addWidget(QLabel(_("lbl_videohosting")))
+        # Логический блок селектора платформы (Объединяем надпись и список)
+        hosting_layout = QHBoxLayout()
+        hosting_layout.setSpacing(8) # Минимальное расстояние между надписью и списком
+        hosting_layout.addWidget(QLabel(_("lbl_videohosting")))
+        
         self.platform_selector = QComboBox()
         for key, display_name in self.hostings:
             self.platform_selector.addItem(display_name, userData=key)
         self.platform_selector.currentIndexChanged.connect(self.update_preview)
-        bottom_layout.addWidget(self.platform_selector)
+        hosting_layout.addWidget(self.platform_selector)
+        
+        # Добавляем блок хостинга в нижнюю строку
+        bottom_layout.addLayout(hosting_layout)
+        
+        # Визуальный разделитель между селектором хостинга и кнопками копирования
+        bottom_layout.addSpacing(20)
 
-        # 3. Кнопки копирования текста
+        # Кнопки копирования текста
         self.btn_copy_video = QPushButton(f"📋 {_('btn_copy_video')}")
         self.btn_copy_shorts = QPushButton(f"📱 {_('btn_copy_shorts')}")
         self.btn_copy_ai = QPushButton(f"🤖 {_('btn_copy_ai')}")
