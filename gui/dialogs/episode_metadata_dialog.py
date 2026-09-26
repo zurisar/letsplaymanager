@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import (QDialog, QHBoxLayout, QVBoxLayout, QFormLayout,
                              QLabel, QWidget, QApplication, QComboBox)
 from PyQt6.QtCore import Qt
 from core.config import _
+from core.templates import TemplateManager
 
 class EpisodeMetadataDialog(QDialog):
     def __init__(self, parent, game_name, ep_number, game_data=None, profile_data=None, episode_data=None, hostings=None):
@@ -145,132 +146,81 @@ class EpisodeMetadataDialog(QDialog):
         main_layout.addWidget(left_panel, stretch=1)
         main_layout.addWidget(right_panel, stretch=1)
 
-    def update_preview(self):
-        # 1. Расчет длины заголовка
-        ep_title = self.title_input.text().strip()
+    def _get_raw_data(self):
+        """Единая точка сбора всех переменных для шаблонизатора"""
+        current_platform_key = self.platform_selector.currentData()
+        ep_tags = self.tags_input.text().strip()
+        game_tags = self.game_data.get("default_tags", "")
         
-        # Формируем название с разделителем, если введено уникальное имя
+        combined_tags = f"{game_tags} {ep_tags}".replace(',', ' ')
+        all_tags = [t.strip() for t in combined_tags.split() if t.strip()]
+        unique_tags = " ".join(list(dict.fromkeys(all_tags))) 
+        
+        return {
+            "game_name": self.game_name,
+            "ep_number": self.ep_number,
+            "custom_title": self.title_input.text().strip(),
+            "custom_desc": self.desc_input.toPlainText().strip(),
+            "timecodes": self.timecodes_input.toPlainText().strip(),
+            "unique_tags": unique_tags,
+            "game_desc": self.game_data.get("desc_template", ""),
+            "game_playlist": self.game_data.get("playlists", {}).get(current_platform_key, ""),
+            "profile_links": self.profile_data.get("channel_links", ""),
+            "profile_cta": self.profile_data.get("global_desc", "")
+        }
+
+    def update_preview(self):
+        raw_data = self._get_raw_data()
+        
+        # Расчет длины заголовка для счетчика лимитов YouTube/RuTube
+        ep_title = raw_data["custom_title"]
         if ep_title:
             full_title = f"{ep_title} | {self.game_name} - {_('lbl_episode')} {self.ep_number}"
         else:
             full_title = f"{self.game_name} | {_('lbl_episode')} {self.ep_number}"
             
         char_count = len(full_title)
-        
-        # Окрашиваем счетчик в красный, если превышен лимит хостингов
         color = "#d32f2f" if char_count > 100 else "#888888"
-        self.counter_label.setText(f'<span style="color:{color};">{char_count}/{_('lbl_100_symbols')}</span>')
+        self.counter_label.setText(f'<span style="color:{color};">{char_count}/{_("lbl_100_symbols")}</span>')
         
-        # 2. Сборка тела описания
-        desc = self.desc_input.toPlainText().strip()
-        timecodes = self.timecodes_input.toPlainText().strip()
-        ep_tags = self.tags_input.text().strip()
-
-        # --- Читаем реальные ключи из БД и Профиля ---     
-        current_platform_key = self.platform_selector.currentData()   
-        
-        game_desc = self.game_data.get("desc_template", "")
-        playlists = self.game_data.get("playlists", {})
-        game_playlist = playlists.get(current_platform_key, "")
-        game_tags = self.game_data.get("default_tags", "")
-        
-        profile_links = self.profile_data.get("channel_links", "")
-        profile_cta = self.profile_data.get("global_desc", "")
-             
-        # Используем HTML для красивого предпросмотра (при копировании будет Plain Text)
-        preview_html = f"<b>{_('lbl_title_upper')}:</b><br><span style='color: #4CAF50;'>{full_title}</span><br><br>"
-        preview_html += f"<b>{_('lbl_description_upper')}:</b><br>"
-        if desc: preview_html += f"{desc}<br><br>"
-        preview_html += f"{game_desc.replace(chr(10), '<br>')}<br><br>"
-
-        if timecodes:
-            preview_html += f"⏱️ <b>{_('lbl_timecodes')}:</b><br>{timecodes.replace(chr(10), '<br>')}<br><br>"
-
-        preview_html += f"🔗 <b>{_('lbl_links')}:</b><br>{_('lbl_playlist')}: {game_playlist}<br>"
-        preview_html += f"{profile_links.replace(chr(10), '<br>')}<br><br>"
-        preview_html += f"{profile_cta.replace(chr(10), '<br>')}<br><br>"
-        
-        # Склейка и фильтрация тегов (убираем дубли и пустые)
-        # Объединяем теги игры и эпизода, заменяем запятые на пробелы и разбиваем
-        combined_tags = f"{game_tags} {ep_tags}".replace(',', ' ')
-        all_tags = [t.strip() for t in combined_tags.split() if t.strip()]
-        unique_tags = " ".join(list(dict.fromkeys(all_tags)))
-        preview_html += f"<span style='color: #2196F3;'>{unique_tags}</span>"
-        
-        self.preview_browser.setHtml(preview_html)
-        
-    def copy_to_clipboard(self, mode):
-        # 1. Собираем базовые сырые данные
-        desc = self.desc_input.toPlainText().strip()
-        timecodes = self.timecodes_input.toPlainText().strip()
-        ep_tags = self.tags_input.text().strip()
-
-        # Получаем ключ выбранной платформы (например, 'youtube' или 'rutube')
-        current_platform_key = self.platform_selector.currentData()
-        
-        game_desc = self.game_data.get("desc_template", "")
-        playlists = self.game_data.get("playlists", {})
-        game_playlist = playlists.get(current_platform_key, "")
-        game_tags = self.game_data.get("default_tags", "")
-        
-        profile_links = self.profile_data.get("channel_links", "")
-        profile_cta = self.profile_data.get("global_desc", "")
-        
-        # Объединяем теги игры и эпизода, заменяем запятые на пробелы и разбиваем
-        combined_tags = f"{game_tags} {ep_tags}".replace(',', ' ')
-        all_tags = [t.strip() for t in combined_tags.split() if t.strip()]
-        unique_tags = " ".join(list(dict.fromkeys(all_tags)))
-        unique_tags = " ".join(list(dict.fromkeys(all_tags))) 
-        
-        text_to_copy = ""
-        
-        # 2. Формируем текст в зависимости от режима
-        if mode == "video":
-            parts = []
-            if desc: parts.append(desc)
-            if game_desc: parts.append(game_desc)
-            if timecodes: parts.append(f"⏱️ {_('lbl_timecodes')}:\n{timecodes}")
-
-            links_part = []
-            if game_playlist: links_part.append(f"{_('lbl_playlist')}: {game_playlist}")
-            if profile_links: links_part.append(profile_links)
-            if links_part: parts.append(f"🔗 {_('lbl_links')}:\n" + "\n".join(links_part))
+        # Сборка финального текста через шаблонизатор
+        if hasattr(self.parent(), 'config'):
+            tm = TemplateManager(self.parent().config)
+            rendered_text = tm.render("publish_video.tpl", raw_data)
+        else:
+            rendered_text = "Ошибка: Конфигурация не найдена"
             
-            if profile_cta: parts.append(profile_cta)
-            if unique_tags: parts.append(unique_tags)
-            
-            text_to_copy = "\n\n".join(parts)
-            
-        elif mode == "shorts":
-            # Для Shorts: описание игры и ссылки. Без таймкодов и тегов (они уходят в заголовок)
-            parts = []
-            if game_desc: parts.append(game_desc)
-            
-            links_part = []
-            if game_playlist: links_part.append(f"{_('lbl_playlist')}: {game_playlist}")
-            if profile_links: links_part.append(profile_links)
-            if links_part: parts.append(f"🔗 {_('lbl_links')}:\n" + "\n".join(links_part))
-            
-            if profile_cta: parts.append(profile_cta)
-            
-            text_to_copy = "\n\n".join(parts)
-            
-        elif mode == "ai":
-            # Промпт для нейросети
-            base_tags_phrase = f"Мои стандартные теги: {unique_tags}. Их дублировать не нужно." if unique_tags else ""
-            
-            text_to_copy = (
-                f"Я записываю летсплей по игре {self.game_name}. "
-                f"В этой серии (эпизод {self.ep_number}) произошло следующее:\n{desc}\n\n"
-                f"1. Сгенерируй 5 вариантов кликбейтных названий для YouTube (строго до 100 символов каждое).\n"
-                f"2. Напиши короткое привлекательное SEO-описание.\n"
-                f"3. Предложи 5-7 новых уникальных хештегов, которые подходят ИМЕННО к событиям этой серии. {base_tags_phrase}"
+        # Форматирование для предпросмотра (замена переносов и подсветка тегов)
+        html_text = rendered_text.replace('\n', '<br>')
+        
+        if raw_data["unique_tags"]:
+            html_text = html_text.replace(
+                raw_data["unique_tags"], 
+                f"<span style='color: #2196F3;'>{raw_data['unique_tags']}</span>"
             )
             
-        # 3. Отправляем в буфер обмена
-        clipboard = QApplication.clipboard()
-        clipboard.setText(text_to_copy)
+        self.preview_browser.setHtml(html_text)
+        
+    def copy_to_clipboard(self, mode):
+        raw_data = self._get_raw_data()
+        
+        if not hasattr(self.parent(), 'config'):
+            return
             
+        tm = TemplateManager(self.parent().config)
+        
+        # Формируем текст строго по выбранному .tpl файлу
+        if mode == "video":
+            text_to_copy = tm.render("publish_video.tpl", raw_data)
+        elif mode == "shorts":
+            text_to_copy = tm.render("publish_shorts.tpl", raw_data)
+        elif mode == "ai":
+            text_to_copy = tm.render("ai_prompt.tpl", raw_data)
+        else:
+            text_to_copy = ""
+            
+        QApplication.clipboard().setText(text_to_copy)
+    
     def get_data(self):
         return {
             "custom_title": self.title_input.text().strip(),

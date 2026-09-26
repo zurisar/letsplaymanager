@@ -20,6 +20,8 @@ from PyQt6.QtGui import (QColor, QAction, QIcon)
 from core.config import _, load_config, save_config, load_language, APP_VERSION, BASE_DIR, get_color
 from core.ffmpeg_worker import FFmpegWorker, get_tool_path
 from core.update_checker import UpdateCheckerThread
+from core.profile_manager import ProfileManager
+from core.templates import TemplateManager
 
 from database import (add_game, get_games, add_episode_if_not_exists, 
                       get_episodes, get_uploads, toggle_upload, update_episode_metadata,
@@ -43,7 +45,6 @@ from gui.dialogs.schedule_dialog import ScheduleDialog
 from gui.dialogs.select_episode_dialog import SelectEpisodeDialog
 from gui.dialogs.profile_settings_dialog import ProfileSettingsDialog
 from gui.dialogs.episode_metadata_dialog import EpisodeMetadataDialog
-from core.profile_manager import ProfileManager
 
 class LetsPlayManager(QMainWindow):
     def __init__(self):
@@ -639,7 +640,7 @@ class LetsPlayManager(QMainWindow):
             self.config["renders_folder"] = dialog.renders_input.text()
             self.config["notepad_path"] = dialog.text_editor_input.text()
             self.config["gimp_path"] = dialog.gimp_input.text()
-            self.config["desc_name"] = dialog.desc_input.text()
+            self.config["notes_name"] = dialog.notes_input.text()
             self.config["preview_name"] = dialog.prev_input.text()
             self.config["default_codec"] = dialog.codec_combo.currentData()
             
@@ -1103,7 +1104,7 @@ class LetsPlayManager(QMainWindow):
 
                 # --- БЛОК ОПИСАНИЯ И ПРЕВЬЮ (Теперь индексы 4 и 5) ---
                 # Меняем дефолтное имя на notes.txt
-                notes_name = self.config.get("desc_name", "notes.txt") 
+                notes_name = self.config.get("notes_name", "notes.txt") 
                 prev_name = self.config.get("preview_name", "preview.jpg")
                 
                 notes_path = os.path.join(ep_folder, notes_name)
@@ -1419,7 +1420,7 @@ class LetsPlayManager(QMainWindow):
             self.update_table()
     
     def copy_desc_to_clipboard(self, ep_id, hosting_key, game_name, ep_number, game_data):
-        from database import get_episode_metadata
+        
         ep_meta = get_episode_metadata(ep_id)
         title, desc, timecodes, ep_tags = ep_meta
         
@@ -1427,44 +1428,38 @@ class LetsPlayManager(QMainWindow):
         active_profile_id = self.pm.data.get("last_used_profile", "default")
         profile_data = self.pm.data["profiles"].get(active_profile_id, {})
         
-        # Получаем шаблоны игры
-        game_desc = game_data.get("desc_template", "")
+        # Склейка тегов без дубликатов
         game_tags = game_data.get("default_tags", "")
-        
-        # Получаем плейлист ИМЕННО для выбранного хостинга
-        playlists = game_data.get("playlists", {})
-        game_playlist = playlists.get(hosting_key, "")
-        
-        profile_links = profile_data.get("channel_links", "")
-        profile_cta = profile_data.get("global_desc", "")
-        
-        # Склейка тегов
-        all_tags = [t.strip() for t in f"{game_tags} {ep_tags}".replace(',', ' ').split() if t.strip()]
+        combined_tags = f"{game_tags} {ep_tags}".replace(',', ' ')
+        all_tags = [t.strip() for t in combined_tags.split() if t.strip()]
         unique_tags = " ".join(list(dict.fromkeys(all_tags))) 
         
-        # Сборка финального текста
-        parts = []
-        if desc: parts.append(desc)
-        if game_desc: parts.append(game_desc)
-        if timecodes: parts.append(f"⏱️ {_('lbl_timecodes')}\n{timecodes}")
+        # Собираем единый словарь сырых данных
+        raw_data = {
+            "game_name": game_name,
+            "ep_number": ep_number,
+            "custom_title": title,
+            "custom_desc": desc,
+            "timecodes": timecodes,
+            "unique_tags": unique_tags,
+            "game_desc": game_data.get("desc_template", ""),
+            "game_playlist": game_data.get("playlists", {}).get(hosting_key, ""),
+            "profile_links": profile_data.get("channel_links", ""),
+            "profile_cta": profile_data.get("global_desc", "")
+        }
         
-        links_part = []
-        if game_playlist: links_part.append(f"{_('lbl_playlist')}: {game_playlist}")
-        if profile_links: links_part.append(profile_links)
-        if links_part: parts.append(f"🔗 {_('lbl_links')}:\n" + "\n".join(links_part))
-        
-        if profile_cta: parts.append(profile_cta)
-        if unique_tags: parts.append(unique_tags)
-        
-        text_to_copy = "\n\n".join(parts)
+        # Генерируем текст через шаблонизатор
+        tm = TemplateManager(self.config)
+        text_to_copy = tm.render("publish_video.tpl", raw_data)
         
         # Отправляем в буфер обмена
-        QApplication.clipboard().setText(text_to_copy.strip())
+        QApplication.clipboard().setText(text_to_copy)
+        
         import logging
         logging.info(f"Описание для '{hosting_key}' успешно скопировано в буфер обмена.")
 
     def copy_title_to_clipboard(self, ep_id, game_name, ep_number):
-        from database import get_episode_metadata
+        
         ep_meta = get_episode_metadata(ep_id)
         
         # Безопасное извлечение названия (если данных еще нет)
@@ -1479,7 +1474,7 @@ class LetsPlayManager(QMainWindow):
         
         import logging
         logging.info(f"Название эпизода {ep_number} успешно скопировано в буфер обмена.")
-
+   
     def center_on_screen(self):
         screen = QApplication.primaryScreen()
         if screen:
