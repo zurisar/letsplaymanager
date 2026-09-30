@@ -4,11 +4,13 @@ import webbrowser
 import subprocess
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QWidget, 
                              QLabel, QPushButton, QTableWidget, QTableWidgetItem, 
-                             QCheckBox, QMessageBox, QFileDialog, QInputDialog, QLineEdit)
+                             QCheckBox, QMessageBox, QFileDialog, QInputDialog, QLineEdit,
+                             QMenu, QApplication)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
-from core.config import _
+from core.config import _, open_path
+from core.templates import TemplateManager
 from database import (get_shorts, add_short_to_db, update_short_field, 
                       get_short_uploads, update_short_upload_status, update_short_url)
 from gui.dialogs.calendar_dialog import CalendarDialog
@@ -43,13 +45,13 @@ class ShortsManagerDialog(QDialog):
         play_btn.clicked.connect(self.play_original)
         
         folder_btn = QPushButton(f"📁 {_('lbl_episode_folder')}")
-        folder_btn.clicked.connect(lambda: os.startfile(self.ep_folder) if os.path.exists(self.ep_folder) else None)
+        folder_btn.clicked.connect(lambda: open_path(self.ep_folder) if os.path.exists(self.ep_folder) else None)
         
         editor_btn = QPushButton(f"🎬 {_('lbl_videoeditor')}")
         editor_btn.setToolTip(_("tooltip_run_videoeditor"))
         editor_btn.clicked.connect(self.launch_editor)
 
-        cut_btn = QPushButton(f"✂️ {_('btn_cut_shorts')}") # <--- НОВАЯ КНОПКА
+        cut_btn = QPushButton(f"✂️ {_('btn_cut_shorts')}")
         cut_btn.clicked.connect(self.open_shorts_cutter)
         
         ai_btn = QPushButton(_("lbl_ai_chat"))
@@ -70,6 +72,11 @@ class ShortsManagerDialog(QDialog):
         self.table = QTableWidget(0, 6 + len(self.hostings))
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
+        
+        # Включаем кастомное контекстное меню
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.show_context_menu)
+        
         layout.addWidget(self.table)
 
         # --- ПАНЕЛЬ ДОБАВЛЕНИЯ ---
@@ -79,6 +86,82 @@ class ShortsManagerDialog(QDialog):
         layout.addWidget(add_btn)
 
         self.update_table()
+
+    # --- НОВЫЙ БЛОК: КОНТЕКСТНОЕ МЕНЮ И КОПИРОВАНИЕ ---
+    def show_context_menu(self, pos):
+        item = self.table.itemAt(pos)
+        if not item:
+            return
+            
+        row = item.row()
+        menu = QMenu(self)
+        
+        # Действия копирования базовых полей (только по ключам локализации)
+        action_title = menu.addAction(_("menu_copy_title"))
+        action_title.triggered.connect(lambda checked, r=row: self.copy_short_data(r, "title"))
+        
+        action_tags = menu.addAction(_("menu_copy_tags"))
+        action_tags.triggered.connect(lambda checked, r=row: self.copy_short_data(r, "tags"))
+        
+        menu.addSeparator()
+        
+        # Подменю для описания с выбором платформы
+        desc_menu = menu.addMenu(_("menu_copy_desc"))
+        for h_id, h_key, h_name in self.hostings:
+            action_desc = desc_menu.addAction(h_name)
+            action_desc.triggered.connect(lambda checked, r=row, hk=h_key: self.copy_short_data(r, "desc", hk))
+            
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def copy_short_data(self, row, mode, hosting_key=None):
+        s_title = self.table.item(row, 0).text()
+        s_tags_item = self.table.item(row, 4).text()
+        s_tags = s_tags_item if s_tags_item != _("lbl_add_tags") else ""
+        
+        if mode == "title":
+            QApplication.clipboard().setText(s_title)
+            
+        elif mode == "tags":
+            QApplication.clipboard().setText(s_tags)
+            
+        elif mode == "desc":
+            # Извлекаем данные игры и профиля через родительское окно
+            game_data = {}
+            if hasattr(self.parent(), 'game_selector'):
+                current_index = self.parent().game_selector.currentIndex()
+                if current_index != -1:
+                    game_data = self.parent().game_selector.itemData(current_index) or {}
+                    
+            profile_data = {}
+            if hasattr(self.parent(), 'pm'):
+                active_profile_id = self.parent().pm.data.get("last_used_profile", "default")
+                profile_data = self.parent().pm.data["profiles"].get(active_profile_id, {})
+            
+            # Склейка тегов игры и шортса без дубликатов
+            game_tags = game_data.get("default_tags", "")
+            combined_tags = f"{game_tags} {s_tags}".replace(',', ' ')
+            all_tags = [t.strip() for t in combined_tags.split() if t.strip()]
+            unique_tags = " ".join(list(dict.fromkeys(all_tags)))
+            
+            # Сборка сырых данных для шаблонизатора (совместимо с publish_shorts.tpl)
+            raw_data = {
+                "game_name": self.game_name,
+                "ep_number": self.ep_number,
+                "custom_title": s_title, 
+                "custom_desc": "", 
+                "timecodes": "",
+                "unique_tags": unique_tags,
+                "game_desc": game_data.get("desc_template", ""),
+                "game_playlist": game_data.get("playlists", {}).get(hosting_key, ""),
+                "profile_links": profile_data.get("channel_links", ""),
+                "profile_cta": profile_data.get("global_desc", "")
+            }
+            
+            tm = TemplateManager(self.config)
+            text_to_copy = tm.render("publish_shorts.tpl", raw_data)
+            
+            QApplication.clipboard().setText(text_to_copy)
+    # ---------------------------------------------------
 
     def open_shorts_cutter(self):
         if not os.path.exists(self.ep_folder):
@@ -100,8 +183,7 @@ class ShortsManagerDialog(QDialog):
         editor_path = self.config.get("video_editor_path", "")
         if os.path.exists(editor_path):
             try:
-                # Используем startfile вместо Popen
-                os.startfile(editor_path)
+                open_path(editor_path)
             except Exception as e:
                 QMessageBox.critical(self, _("msg_title_error"), f"{_('msg_failed_to_start_editor')}:\n{e}")
         else:
@@ -111,7 +193,7 @@ class ShortsManagerDialog(QDialog):
         if not os.path.exists(self.ep_folder): return
         for f in os.listdir(self.ep_folder):
             if f.endswith(('.mp4', '.mkv', '.avi')) and "shorts" not in f.lower():
-                os.startfile(os.path.join(self.ep_folder, f))
+                open_path(os.path.join(self.ep_folder, f))
                 return
         QMessageBox.warning(self, _("msg_title_error"), _("msg_episode_file_not_found"))
 
@@ -139,7 +221,7 @@ class ShortsManagerDialog(QDialog):
             m_lay.setContentsMargins(2,2,2,2)
             f_btn = QPushButton("📁")
             f_btn.setFixedWidth(30)
-            f_btn.clicked.connect(lambda ch, sid=s_id: os.startfile(self.shorts_folder) if os.path.exists(self.shorts_folder) else None)
+            f_btn.clicked.connect(lambda ch, sid=s_id: open_path(self.shorts_folder) if os.path.exists(self.shorts_folder) else None)
             p_btn = QPushButton("▶")
             p_btn.setFixedWidth(30)
             p_btn.clicked.connect(lambda ch, sid=s_id, num=s_num: self.play_short(num))
@@ -183,16 +265,13 @@ class ShortsManagerDialog(QDialog):
         expected = f"Short {s_num}"
         for f in os.listdir(self.shorts_folder):
             if expected in f and f.endswith(('.mp4', '.mkv')):
-                os.startfile(os.path.join(self.shorts_folder, f))
+                open_path(os.path.join(self.shorts_folder, f))
                 return
         QMessageBox.warning(self, _("status_error"), _("msg_short_file_not_found"))
 
     def add_short(self):
-        # Если папка шортсов уже существует (например, после рендера из Kdenlive), открываем её.
-        # Иначе используем стандартную папку рендеров из конфигурации.
         start_dir = self.shorts_folder if os.path.exists(self.shorts_folder) else self.config.get("renders_folder", "")
         
-        # Используем getOpenFileNames (с буквой 's' на конце) для выбора нескольких файлов
         files, ignored = QFileDialog.getOpenFileNames(
             self, 
             _("lbl_select_short"), 
@@ -206,11 +285,10 @@ class ShortsManagerDialog(QDialog):
         os.makedirs(self.shorts_folder, exist_ok=True)
         shorts = get_shorts(self.ep_id)
         
-        # Находим текущий максимальный номер шортса для этого эпизода
         next_num = max([s[1] for s in shorts] + [0])
         
         for file in files:
-            next_num += 1 # Увеличиваем номер для каждого нового файла в цикле
+            next_num += 1
             
             filename, ext = os.path.splitext(file)
             out_name = f"{self.game_name} - Ep.{self.ep_number} - Short {next_num}{ext}"
@@ -219,21 +297,18 @@ class ShortsManagerDialog(QDialog):
             norm_in = os.path.normpath(file)
             norm_out = os.path.normpath(out_path)
             
-            # Если файл находится в другой папке или имеет другое имя — перемещаем/переименовываем
             if norm_in != norm_out:
                 try:
                     shutil.move(norm_in, norm_out)
                 except Exception as e:
                     QMessageBox.critical(self, _("status_error"), f"{_('lbl_video_convert_error')} ({os.path.basename(file)}):\n{e}")
-                    continue # Пропускаем файл с ошибкой и переходим к следующему
+                    continue 
             
-            # Запрашиваем размер и время через родительское окно
             size_str = self.parent().get_format_size(os.path.getsize(norm_out))
             dur_str = self.parent().get_video_duration(norm_out)
             
             add_short_to_db(self.ep_id, next_num, size_str, dur_str)
             
-        # Обновляем таблицы один раз после окончания цикла обработки всех файлов
         self.update_table()
         self.parent().update_table()
 

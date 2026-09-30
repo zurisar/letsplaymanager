@@ -17,7 +17,7 @@
     "btn_browse": "Обзор",
     "lbl_text_editor": "Текстовый редактор (.exe):",
     "lbl_gimp_path": "Путь к GIMP (.exe):",
-    "lbl_desc_filename": "Имя файла описания:",
+    "lbl_notes_filename": "Имя файла заметок:",
     "lbl_preview_filename": "Имя файла превью:",
     "btn_save": "Сохранить",
     "btn_cancel": "Отмена",
@@ -317,13 +317,29 @@
     "title_select_episode": "Выбор эпизода",
     "lbl_choose_episode": "Выберите эпизод:",
     "msg_no_available_episodes": "Нет доступных эпизодов.",
-    "filter_executable": "Исполняемый файл (.exe)",
+    "filter_executable": "Исполняемые файлы (*.exe);;Все файлы (*.*)",
     "lbl_title": "Название",
     "lbl_videohosting": "Видеохостинг",
     "btn_close": "Закрыть",
-
-
-
-"__comment": "main_window.py line 355"
-
+    "theme_dark": "темная",
+    "theme_light": "светлая",
+    "lbl_theme": "Тема оформления",
+    "title_shorts_cutter": "Нарезка на шортсы",
+    "lbl_start": "Старт:",
+    "btn_add_15s": "+15с",
+    "btn_add_30s": "+30с",
+    "btn_add_1m": "+1м",
+    "lbl_fragments": "Фрагменты:",
+    "btn_add_fragment": "➕ Добавить",
+    "btn_remove_fragment": "➖ Убрать",
+    "chk_normalize_fps": "Нормализация FPS (60)",
+    "tooltip_normalize_fps": "Устраняет рассинхрон в видеоредакторах.\nВнимание: требует перекодирования видео, процесс займет больше времени.",
+    "btn_cut": "✂️ Нарезать",
+    "dialog_select_source": "Выберите исходное видео",
+    "msg_all_fragments_cut": "\n✅ Все фрагменты успешно нарезаны!",
+    "msg_cutting_fragment": "\n--- Нарезка фрагмента: {out_name} ---\n",
+    "msg_error": "\n❌ Ошибка: {message}",
+    "menu_copy_title": "📋 Копировать название",
+    "menu_copy_tags": "🏷️ Копировать теги",
+    "menu_copy_desc": "📱 Копировать описание (по шаблону)"
 }

@@ -95,8 +95,8 @@ class SettingsDialog(QDialog):
         video_editor_layout.addWidget(video_editor_btn)
         layout.addRow(f"{_('lbl_videoeditor')} (.exe):", video_editor_layout)
 
-        self.desc_input = QLineEdit(self.config.get("desc_name", "desc.txt"))
-        layout.addRow(_("lbl_desc_filename"), self.desc_input)
+        self.notes_input = QLineEdit(self.config.get("notes_name", "notes.txt"))
+        layout.addRow(_("lbl_notes_filename"), self.notes_input)
 
         self.prev_input = QLineEdit(self.config.get("preview_name", "preview.jpg"))
         layout.addRow(_("lbl_preview_filename"), self.prev_input)
@@ -148,7 +148,7 @@ class SettingsDialog(QDialog):
         self.config["notepad_path"] = self.text_editor_input.text().strip()
         self.config["gimp_path"] = self.gimp_input.text().strip()
         self.config["video_editor_path"] = self.video_editor_input.text().strip()
-        self.config["desc_name"] = self.desc_input.text().strip()
+        self.config["notes_name"] = self.notes_input.text().strip()
         self.config["preview_name"] = self.prev_input.text().strip()
 
         save_config(self.config)

@@ -4,6 +4,8 @@ import json
 import logging
 import shutil
 import updater
+import platform
+import subprocess
 
 # Добавляем импорты для работы с темами
 from PyQt6.QtGui import QPalette, QColor
@@ -39,17 +41,18 @@ sys.excepthook = handle_exception
 
 # --- КОНФИГУРАЦИЯ ---
 def load_config(config_filename="config.json"):
+    is_win = platform.system() == "Windows"
     default_config = {
         "version": APP_VERSION,
         "language": "ru_ru",
         "theme": "dark",
-        "gimp_path": r"C:\Program Files\GIMP 2\bin\gimp-2.10.exe",
-        "notepad_path": "notepad.exe",
-        "desc_name": "desc.txt",
+        "gimp_path": r"C:\Program Files\GIMP 2\bin\gimp-2.10.exe" if is_win else "gimp",
+        "notepad_path": "notepad.exe" if is_win else "xdg-open",
+        "notes_name": "notes.txt",
         "preview_name": "preview.jpg",
         "recordings_folder": "", 
         "renders_folder": "",     
-        "video_editor_path": "",
+        "video_editor_path": "" if is_win else "kdenlive",
         "default_codec": "h264_cpu"
     }
     
@@ -71,6 +74,18 @@ def load_config(config_filename="config.json"):
             config = json.load(f)
         except json.JSONDecodeError:
             return default_config
+        
+    # --- МИГРАЦИЯ КОНФИГА: Замена desc_name на notes_name ---
+    if "desc_name" in config:
+        # Переносим значение в новый ключ и удаляем старый
+        config["notes_name"] = config.pop("desc_name")
+        
+        # Если у пользователя стояло стандартное "desc.txt", принудительно меняем на "notes.txt"
+        if config["notes_name"] == "desc.txt":
+            config["notes_name"] = "notes.txt"
+            
+        save_config(config, config_filename)
+        logging.info("Ключ desc_name успешно мигрирован в notes_name в config.json")
 
     old_version = config.get("version", "0.1")
     if old_version < APP_VERSION:
@@ -150,3 +165,12 @@ def get_color(color_key, current_theme="dark"):
     """Возвращает QColor на основе ключа и текущей темы"""
     hex_code = THEME_COLORS.get(color_key, {}).get(current_theme, "#000000")
     return QColor(hex_code)
+
+def open_path(path):
+    """Универсальное открытие файлов и папок в зависимости от ОС"""
+    if platform.system() == "Windows":
+        os.startfile(path)
+    elif platform.system() == "Darwin":  # macOS
+        subprocess.call(["open", path])
+    else:  # Linux и остальные
+        subprocess.call(["xdg-open", path])

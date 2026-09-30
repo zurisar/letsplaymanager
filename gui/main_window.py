@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt6.QtGui import (QColor, QAction, QIcon)
 
 # --- НАШИ МОДУЛИ ---
-from core.config import _, load_config, save_config, load_language, APP_VERSION, BASE_DIR, get_color
+from core.config import _, load_config, save_config, load_language, APP_VERSION, BASE_DIR, get_color, open_path
 from core.ffmpeg_worker import FFmpegWorker, get_tool_path
 from core.update_checker import UpdateCheckerThread
 from core.profile_manager import ProfileManager
@@ -1087,13 +1087,13 @@ class LetsPlayManager(QMainWindow):
                 folder_btn = QPushButton("📁")
                 folder_btn.setToolTip(_("tooltip_open_episode_folder"))
                 folder_btn.setFixedWidth(30)
-                folder_btn.clicked.connect(lambda checked, p=ep_folder: os.startfile(p))
+                folder_btn.clicked.connect(lambda checked, p=ep_folder: open_path(p))
                 
                 play_btn = QPushButton("▶️")
                 play_btn.setToolTip(_("tooltip_watch_video"))
                 play_btn.setFixedWidth(30)
                 if video_file:
-                    play_btn.clicked.connect(lambda checked, p=video_file: os.startfile(p))
+                    play_btn.clicked.connect(lambda checked, p=video_file: open_path(p))
                 else:
                     play_btn.setEnabled(False) # Выключаем кнопку, если видео нет
                     
@@ -1259,7 +1259,7 @@ class LetsPlayManager(QMainWindow):
         try:
             # Если поле пустое, fallback на стандартное приложение Windows
             if not editor.strip():
-                os.startfile(file_path)
+                open_path(file_path)
             else:
                 # Запускаем выбранный редактор и передаем ему файл
                 subprocess.Popen([editor, file_path])
@@ -1274,10 +1274,10 @@ class LetsPlayManager(QMainWindow):
         # Если путь к графическому редактору не указан
         if not gimp_path:
             if os.path.exists(file_path):
-                os.startfile(file_path) # Откроет стандартным просмотрщиком фото
+                open_path(file_path) # Откроет стандартным просмотрщиком фото
             else:
                 # Если картинки нет, откроем папку эпизода
-                os.startfile(os.path.dirname(file_path)) 
+                open_path(os.path.dirname(file_path)) 
             return
             
         # Если редактор (GIMP, Photoshop) указан

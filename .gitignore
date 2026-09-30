@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.vscode/
+run.log
+/build/
+/release/
+/dist/
+/avatar_default.png
+/clean_sources.bat
+/Gemini_Generated_Image_ua9eqoua9eqoua9e.jpg
+/LetsPlayManager.spec
+/letsplay.db
