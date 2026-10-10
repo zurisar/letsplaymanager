@@ -170,8 +170,13 @@ class ShortsCutterDialog(QDialog):
             ]
             
             if self.fps_checkbox.isChecked():
-                # Используем кодек из конфигурации
-                cmd.extend(['-r', '60', '-c:v', encoder, '-preset', 'fast', '-c:a', 'copy'])
+                cmd.extend(['-r', '60', '-c:v', encoder])
+                
+                # Добавляем пресет только для поддерживаемых CPU-кодеков
+                if encoder in ['libx264', 'libx265']:
+                    cmd.extend(['-preset', 'fast'])
+                    
+                cmd.extend(['-c:a', 'copy'])
             else:
                 cmd.extend(['-c', 'copy'])
                 

@@ -335,7 +335,7 @@
     "msg_all_fragments_cut": "\n✅ All fragments successfully cut!",
     "msg_cutting_fragment": "\n--- Cutting fragment: {out_name} ---\n",
     "msg_error": "\n❌ Error: {message}",
-    "menu_copy_title": "📋 Copy title",
+    "menu_copy_title": "Copy title",
     "menu_copy_tags": "🏷️ Copy tags",
     "menu_copy_desc": "📱 Copy description (by template)"
 }

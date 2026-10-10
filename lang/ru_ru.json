@@ -339,7 +339,7 @@
     "msg_all_fragments_cut": "\n✅ Все фрагменты успешно нарезаны!",
     "msg_cutting_fragment": "\n--- Нарезка фрагмента: {out_name} ---\n",
     "msg_error": "\n❌ Ошибка: {message}",
-    "menu_copy_title": "📋 Копировать название",
+    "menu_copy_title": "Копировать название",
     "menu_copy_tags": "🏷️ Копировать теги",
     "menu_copy_desc": "📱 Копировать описание (по шаблону)"
 }

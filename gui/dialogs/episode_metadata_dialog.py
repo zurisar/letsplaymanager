@@ -155,6 +155,10 @@ class EpisodeMetadataDialog(QDialog):
         combined_tags = f"{game_tags} {ep_tags}".replace(',', ' ')
         all_tags = [t.strip() for t in combined_tags.split() if t.strip()]
         unique_tags = " ".join(list(dict.fromkeys(all_tags))) 
+
+        # Считаем остаток символов под заголовок с запасом под хвост видеохостинга
+        suffix = f" | {self.game_name} ({_('lbl_episode')} {self.ep_number})"
+        max_title_len = max(10, 100 - len(suffix))
         
         return {
             "game_name": self.game_name,
@@ -163,6 +167,7 @@ class EpisodeMetadataDialog(QDialog):
             "custom_desc": self.desc_input.toPlainText().strip(),
             "timecodes": self.timecodes_input.toPlainText().strip(),
             "unique_tags": unique_tags,
+            "max_title_len": str(max_title_len), # Динамический лимит под конкретную игру
             "game_desc": self.game_data.get("desc_template", ""),
             "game_playlist": self.game_data.get("playlists", {}).get(current_platform_key, ""),
             "profile_links": self.profile_data.get("channel_links", ""),

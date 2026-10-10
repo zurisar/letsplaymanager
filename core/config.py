@@ -141,6 +141,9 @@ def apply_theme(app, theme_name="dark"):
         dark_palette.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
         dark_palette.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.white)
         dark_palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
+
+        # Фикс бага #13: задаем видимый серый цвет для подсказок (placeholder)
+        dark_palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(140, 140, 140))
         
         dark_palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
         dark_palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
@@ -159,6 +162,10 @@ THEME_COLORS = {
     "deleted_folder": {"light": "#add8e6", "dark": "#1f425c"},
     "past_date": {"light": "#add8e6", "dark": "#1f425c"},
     "future_date": {"light": "#ffffe0", "dark": "#4a451c"},
+    
+    # Статусы расписания в календаре
+    "cal_ready": {"light": "#c8e6c9", "dark": "#2e5b32"},       # Мягкий зеленый
+    "cal_not_ready": {"light": "#ffcdd2", "dark": "#6a2424"},   # Мягкий красный
 }
 
 def get_color(color_key, current_theme="dark"):
