@@ -15,7 +15,7 @@ from PyQt6.QtCore import Qt
 import database
 from database import APP_DATA_DIR
 
-APP_VERSION = "0.7"
+APP_VERSION = "0.8"
 
 # Теперь config.py лежит в папке core, поэтому BASE_DIR это папка уровнем выше
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
