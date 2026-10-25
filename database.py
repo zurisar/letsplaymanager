@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import sqlite3
 import os
 
@@ -120,6 +121,20 @@ def init_db():
     conn.close()
     print(f"База данных успешно инициализирована по пути: {db_path}")
 
+@contextmanager
+def get_connection():
+    """Контекстный менеджер: включает внешние ключи, коммитит транзакцию и гарантированно закрывает коннект."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON;")
+    try:
+        yield conn
+        conn.commit()  # Авто-коммит, если внутри блока with не вылетело исключение
+    except Exception:
+        conn.rollback()  # Откатываем изменения при любой ошибке
+        raise
+    finally:
+        conn.close()  # Железобетонно закрываем файл БД даже при падении
+
 def add_game(name, folder_path, ai_url="", steam_id="", release_date="", desc_template="", default_tags=""):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -163,13 +178,25 @@ def update_game_ai_url(game_id, url):
 # --- Функции эпизодов ---
 
 def add_episode_if_not_exists(game_id, number):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('SELECT id FROM episodes WHERE game_id = ? AND number = ?', (game_id, number))
-    if not cursor.fetchone():
-        cursor.execute('INSERT INTO episodes (game_id, number) VALUES (?, ?)', (game_id, number))
-    conn.commit()
-    conn.close()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT id, sources_deleted FROM episodes WHERE game_id = ? AND number = ?', 
+            (game_id, number)
+        )
+        row = cursor.fetchone()
+        
+        if not row:
+            cursor.execute(
+                'INSERT INTO episodes (game_id, number, sources_deleted) VALUES (?, ?, 0)', 
+                (game_id, number)
+            )
+        elif row[1] == 1:
+            # Фикс бага #14: папка снова на диске — воскрешаем эпизод для календаря
+            cursor.execute(
+                'UPDATE episodes SET sources_deleted = 0 WHERE id = ?', 
+                (row[0],)
+            )
 
 def get_episodes(game_id):
     conn = sqlite3.connect(db_path)
@@ -232,12 +259,14 @@ def get_episode_metadata(episode_id):
     return row if row else ('', '', '', '')
 
 def mark_episode_deleted(episode_id):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    # Ставим флаг удаления и сбрасываем вес/время, так как файлов больше нет
-    cursor.execute('UPDATE episodes SET sources_deleted = 1, file_size = "0", duration = "0" WHERE id = ?', (episode_id,))
-    conn.commit()
-    conn.close()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # Сбрасываем publish_date = '', чтобы удаленный исходник не висел фантомом
+        cursor.execute('''
+            UPDATE episodes 
+            SET sources_deleted = 1, file_size = "0", duration = "0", publish_date = "" 
+            WHERE id = ?
+        ''', (episode_id,))
 
 # --- Функции видеохостингов ---
 
@@ -428,32 +457,27 @@ def update_short_url(short_id, hosting_id, url):
     conn.close()
 
 def delete_game_full(game_id):
-    """Каскадное удаление игры и всех связанных с ней данных из всех таблиц"""
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # Сначала находим все эпизоды этой игры
-    cursor.execute('SELECT id FROM episodes WHERE game_id = ?', (game_id,))
-    episodes = cursor.fetchall()
-    
-    for (ep_id,) in episodes:
-        # Для каждого эпизода находим его шортсы
-        cursor.execute('SELECT id FROM shorts WHERE episode_id = ?', (ep_id,))
-        shorts = cursor.fetchall()
+    """Удаление игры за 4 плоских запроса без N+1 и сирот в episode_uploads"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
         
-        # Удаляем связи с хостингами для этих шортсов
-        for (sh_id,) in shorts:
-            cursor.execute('DELETE FROM shorts_uploads WHERE short_id = ?', (sh_id,))
-            
-        # Удаляем сами шортсы
-        cursor.execute('DELETE FROM shorts WHERE episode_id = ?', (ep_id,))
+        # Чистим таблицы шортсов (т.к. в текущей схеме у них нет ON DELETE CASCADE)
+        cursor.execute('''
+            DELETE FROM shorts_uploads 
+            WHERE short_id IN (
+                SELECT s.id FROM shorts s
+                JOIN episodes e ON s.episode_id = e.id
+                WHERE e.game_id = ?
+            )
+        ''', (game_id,))
         
-    # Теперь, когда зависимые данные удалены, сносим эпизоды и саму игру
-    cursor.execute('DELETE FROM episodes WHERE game_id = ?', (game_id,))
-    cursor.execute('DELETE FROM games WHERE id = ?', (game_id,))
-    
-    conn.commit()
-    conn.close()
+        cursor.execute('''
+            DELETE FROM shorts 
+            WHERE episode_id IN (SELECT id FROM episodes WHERE game_id = ?)
+        ''', (game_id,))
+        
+        # episode_uploads и game_playlists снесутся сами каскадом благодаря PRAGMA foreign_keys = ON
+        cursor.execute('DELETE FROM games WHERE id = ?', (game_id,))
 
 def check_unpublished_shorts(game_id):
     # Проверяем наличие неопубликованных шортсов
@@ -491,7 +515,6 @@ def get_all_shorts_for_schedule():
         FROM shorts s
         JOIN episodes e ON s.episode_id = e.id
         JOIN games g ON e.game_id = g.id
-        WHERE e.sources_deleted = 0
     ''')
     data = cursor.fetchall()
     conn.close()

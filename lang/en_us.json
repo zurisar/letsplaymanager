@@ -337,5 +337,17 @@
     "msg_error": "\n❌ Error: {message}",
     "menu_copy_title": "Copy title",
     "menu_copy_tags": "🏷️ Copy tags",
-    "menu_copy_desc": "📱 Copy description (by template)"
+    "menu_copy_desc": "📱 Copy description (by template)",
+    "warn_ep_unpublished": "This episode is not marked as published on any platform yet!",
+    "warn_unpublished_eps_count": "Unpublished episodes in this game",
+    "warn_unpublished_shorts_count": "Unpublished shorts in DB",
+    "warn_untracked_shorts_files": "Untracked video files in shorts folder (not in DB, possible raw sources)",
+    "msg_delete_irreversible_notice": "Warning: after deletion, video files, thumbnails, and notes will be permanently unavailable.",
+    "msg_select_delete_mode": "Select cleanup mode",
+    "btn_del_video_only": "Video only (keep thumbnail/notes)",
+    "btn_del_archive": "Archive (delete folder, keep in DB)",
+    "btn_del_hard": "Delete permanently (folder + DB)",
+    "opt_del_archive": "Archive — delete folder, keep DB record (default)",
+    "opt_del_video_only": "Video only — keep thumbnails, notes, and shorts",
+    "opt_del_hard": "Full wipe — delete folder and erase from DB"
 }

@@ -22,6 +22,7 @@ from core.ffmpeg_worker import FFmpegWorker, get_tool_path
 from core.update_checker import UpdateCheckerThread
 from core.profile_manager import ProfileManager
 from core.templates import TemplateManager
+from core.deletion_manager import DeletionManager, DeleteMode
 
 from database import (add_game, get_games, add_episode_if_not_exists, 
                       get_episodes, get_uploads, toggle_upload, update_episode_metadata,
@@ -344,26 +345,39 @@ class LetsPlayManager(QMainWindow):
 
     def delete_current_game(self):
         current_index = self.game_selector.currentIndex()
-        if current_index == -1: return
-        
-        game_name = self.game_selector.currentText().replace(" (S)", "") # Убираем маркер для сравнения
+        if current_index == -1:
+            return
+
+        game_name = self.game_selector.currentText().replace(" (S)", "")
         game_data = self.game_selector.itemData(current_index)
         game_id = game_data['id']
         game_folder = game_data['path']
-        
-        unpublished_shorts = check_unpublished_shorts(game_id)
 
-        # Создаем кастомный диалог прямо здесь
+        # Единый префлайт-аудит всей игры через менеджер
+        report = DeletionManager.inspect_game(game_id, game_folder)
+
         dialog = QDialog(self)
         dialog.setWindowTitle(_("title_delete_game"))
         layout = QVBoxLayout(dialog)
 
-        msg = (f"<b>{_('lbl_warnin')}</b> {_('msg_delete_warning_1')}<br>"
-               f"- <b>{_('msg_delete_warning_2')}</b><br><br>"
-               f"{_('msg_delete_warning_3')} <i>{game_name}</i>")
-               
-        if unpublished_shorts > 0:
-            msg += f"<br><br><span style='color:#c0392b;'><b>{_('msg_found')} {unpublished_shorts} {_('msg_unpublished_shorts')}!</b></span>"
+        msg = (
+            f"<b>{_('lbl_warning')}</b> {_('msg_delete_warning_1')}<br>"
+            f"- <b>{_('msg_delete_warning_2')}</b><br>"
+            f"- {_('msg_delete_irreversible_notice')}<br><br>"
+            f"{_('msg_delete_warning_3')} <i>{game_name}</i>"
+        )
+
+        # Выводим все найденные риски красным блоком
+        risk_lines = []
+        if report.unpublished_episodes > 0:
+            risk_lines.append(f"• {_('warn_unpublished_eps_count')}: {report.unpublished_episodes}")
+        if report.unpublished_shorts > 0:
+            risk_lines.append(f"• {_('msg_found')} {report.unpublished_shorts} {_('msg_unpublished_shorts')}!")
+        if report.untracked_shorts_files > 0:
+            risk_lines.append(f"• {_('warn_untracked_shorts_files')}: {report.untracked_shorts_files}")
+
+        if risk_lines:
+            msg += f"<br><br><span style='color:#c0392b;'><b>{'<br>'.join(risk_lines)}</b></span>"
 
         info_label = QLabel(msg)
         info_label.setTextFormat(Qt.TextFormat.RichText)
@@ -372,10 +386,11 @@ class LetsPlayManager(QMainWindow):
         name_input = QLineEdit()
         layout.addWidget(name_input)
 
+        has_any_shorts_risk = (report.unpublished_shorts > 0 or report.untracked_shorts_files > 0)
         keep_shorts_cb = QCheckBox(_("lbl_stay_game_only_for_shorts"))
-        keep_shorts_cb.setChecked(unpublished_shorts > 0)
-        if unpublished_shorts == 0:
-            keep_shorts_cb.hide() # Прячем галочку, если шортсов нет
+        keep_shorts_cb.setChecked(has_any_shorts_risk)
+        if not has_any_shorts_risk:
+            keep_shorts_cb.hide()
         layout.addWidget(keep_shorts_cb)
 
         btn_layout = QHBoxLayout()
@@ -388,53 +403,35 @@ class LetsPlayManager(QMainWindow):
         btn_layout.addWidget(del_btn)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
-        
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            if name_input.text().strip() == game_name:
-                keep_shorts = keep_shorts_cb.isChecked()
-                
-                if keep_shorts and unpublished_shorts > 0:
-                    # ЧАСТИЧНОЕ УДАЛЕНИЕ (Архивация)
-                    episodes = get_episodes(game_id)
-                    for ep in episodes:
-                        ep_id, ep_number = ep[0], ep[1]
-                        ep_folder = os.path.join(game_folder, f"ep{ep_number}")
-                        
-                        if os.path.exists(ep_folder):
-                            # Удаляем всё, КРОМЕ папки shorts
-                            for item in os.listdir(ep_folder):
-                                if item.lower() != "shorts":
-                                    item_path = os.path.join(ep_folder, item)
-                                    try:
-                                        if os.path.isdir(item_path):
-                                            shutil.rmtree(item_path)
-                                        else:
-                                            os.remove(item_path)
-                                    except Exception as e:
-                                        logging.error(f"{_('msg_cant_delete')} {item_path}: {e}")
-                            
-                            # Помечаем эпизод как удаленный в БД
-                            mark_episode_deleted(ep_id)
-                            
-                    QMessageBox.information(self, _("msg_title_success"), f"{_('msg_source_deleted_shorts_saved')}\n{_('msg_game_moved_to_archive')}")
-                else:
-                    # ПОЛНОЕ УДАЛЕНИЕ
-                    if os.path.exists(game_folder):
-                        try:
-                            shutil.rmtree(game_folder)
-                            logging.info(f"{_('msg_game_folder_deleted')}: {game_folder}")
-                        except Exception as e:
-                            QMessageBox.critical(self, _("msg_title_error"), f"{_('msg_cant_delete_folder_from_disk')}\n{_('msg_check_files_may_be_open')}\n\n{e}")
-                            return 
-                    
-                    delete_game_full(game_id)
-                    logging.info(f"{_('msg_game')} '{game_name}' {_('msg_game_deleted_from_DB')}")
-                    QMessageBox.information(self, _("msg_title_success"), f"{_('msg_game')} '{game_name}' {_('msg_game_deleted_full')}")
-                
-                self.load_games()
-            else:
-                QMessageBox.warning(self, _('msg_cancel'), _('msg_name_error_game_not_delete'))
 
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            if name_input.text().strip() != game_name:
+                QMessageBox.warning(self, _('msg_cancel'), _('msg_name_error_game_not_delete'))
+                return
+
+            keep_shorts = keep_shorts_cb.isChecked() and has_any_shorts_risk
+            try:
+                DeletionManager.execute_game(game_id, game_folder, keep_shorts=keep_shorts)
+                if keep_shorts:
+                    logging.info(f"Игра '{game_name}' переведена в архив, папки шортсов сохранены.")
+                    QMessageBox.information(
+                        self, _("msg_title_success"),
+                        f"{_('msg_source_deleted_shorts_saved')}\n{_('msg_game_moved_to_archive')}"
+                    )
+                else:
+                    logging.info(f"Игра '{game_name}' и папка {game_folder} полностью удалены.")
+                    QMessageBox.information(
+                        self, _("msg_title_success"),
+                        f"{_('msg_game')} '{game_name}' {_('msg_game_deleted_full')}"
+                    )
+                self.load_games()
+            except Exception as e:
+                logging.error(f"Ошибка при удалении игры '{game_name}' ({game_folder}): {e}")
+                QMessageBox.critical(
+                    self, _("msg_title_error"),
+                    f"{_('msg_cant_delete_folder_from_disk')}\n{_('msg_check_files_may_be_open')}\n\n{e}"
+                )
+    
     def open_about(self):
         dialog = AboutDialog(self)
         dialog.exec()
@@ -571,31 +568,74 @@ class LetsPlayManager(QMainWindow):
             update_episode_publish_date(ep_id, dialog.selected_date_str)
             self.update_table()
 
-    def delete_episode_folder(self, ep_id, ep_folder):
-        # Проверяем, существует ли папка вообще
-        if not os.path.exists(ep_folder):
+    def delete_episode_folder(self, ep_id: int, ep_folder: str):
+        report = DeletionManager.inspect_episode(ep_id, ep_folder)
+
+        if not report.target_path_exists:
             QMessageBox.information(self, _('msg_title_info'), _("msg_folder_already_deleted"))
-            mark_episode_deleted(ep_id)
+            db.mark_episode_deleted(ep_id)
             self.update_table()
             return
 
-        # Запрашиваем подтверждение
-        reply = QMessageBox.question(
-            self, _("title_confirm_clear"), 
-            f"{_('msg_confirm_delete_folder')}:\n{ep_folder}\n{_('msg_confirm_delete_folder_2')}\n\n{_('msg_delete_folder_warning')}", 
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
-            QMessageBox.StandardButton.No
+        dialog = QDialog(self)
+        dialog.setWindowTitle(_("title_confirm_clear"))
+        layout = QVBoxLayout(dialog)
+
+        # Собираем блок предупреждений, если сработал префлайт
+        warnings = []
+        if report.unpublished_episodes > 0:
+            warnings.append(f"⚠️ {_('warn_ep_unpublished')}")
+        if report.unpublished_shorts > 0:
+            warnings.append(f"⚠️ {_('warn_unpublished_shorts_count')}: {report.unpublished_shorts}")
+        if report.untracked_shorts_files > 0:
+            warnings.append(f"⚠️ {_('warn_untracked_shorts_files')}: {report.untracked_shorts_files}")
+
+        msg = ""
+        if warnings:
+            msg += f"<span style='color:#c0392b;'><b>{'<br>'.join(warnings)}</b></span><br><br>"
+
+        msg += (
+            f"{_('msg_confirm_delete_folder')}:<br><b>{ep_folder}</b><br><br>"
+            f"<i>{_('msg_delete_irreversible_notice')}</i>"
         )
-        
-        if reply == QMessageBox.StandardButton.Yes:
+
+        info_label = QLabel(msg)
+        info_label.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(info_label)
+
+        # Дропдаун с режимами: первым (по умолчанию) идет стандартная архивация папки
+        layout.addWidget(QLabel(f"{_('msg_select_delete_mode')}:"))
+        mode_combo = QComboBox()
+        # Храним сам Enum прямо в userData комбобокса, чтобы не мапить по индексам
+        mode_combo.addItem(_("opt_del_archive"), DeleteMode.ARCHIVE_FOLDER)
+        mode_combo.addItem(_("opt_del_video_only"), DeleteMode.VIDEO_ONLY)
+        mode_combo.addItem(_("opt_del_hard"), DeleteMode.HARD_EPISODE)
+        layout.addWidget(mode_combo)
+
+        btn_layout = QHBoxLayout()
+        del_btn = QPushButton(_("btn_delete"))
+        del_btn.setStyleSheet("background-color: lightcoral;")
+        del_btn.clicked.connect(dialog.accept)
+
+        cancel_btn = QPushButton(_("btn_cancel"))
+        cancel_btn.clicked.connect(dialog.reject)
+        cancel_btn.setDefault(True)  # Фокус по умолчанию на Отмене от случайного Enter
+
+        btn_layout.addStretch()
+        btn_layout.addWidget(del_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_mode = mode_combo.currentData()
             try:
-                shutil.rmtree(ep_folder) # Безвозвратно удаляем папку со всем содержимым
-                mark_episode_deleted(ep_id) # Обновляем БД
-                self.update_table() # Перерисовываем таблицу (строка станет голубой)
+                DeletionManager.execute_episode(ep_id, ep_folder, selected_mode)
+                self.update_table()
                 QMessageBox.information(self, _("msg_title_success"), _("msg_folder_deleted_success"))
             except Exception as e:
+                logging.error(f"Ошибка при удалении эпизода {ep_id} ({ep_folder}): {e}")
                 QMessageBox.critical(self, _("msg_title_error"), f"{_('msg_folder_delete_error')}:\n{e}")
-
+    
     def open_url_dialog(self, ep_id, host_id, host_name):
         current_url = get_upload_url(ep_id, host_id)
         new_url, ok = QInputDialog.getText(
