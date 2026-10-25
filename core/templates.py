@@ -37,22 +37,21 @@ DEFAULT_TEMPLATES = {
         ),
         "shorts": "{game_desc}\n\n{block_links}\n\n{profile_cta}",
         "ai": (
-            "Я автор YouTube-канала, выпускаю летсплей по игре «{game_name}».\n"
-            "Это серия №{ep_number}.\n\n"
+            "Игра: «{game_name}», серия №{ep_number}.\n\n"
             "КОНТЕКСТ СЕРИИ:\n"
-            "Краткий черновик: {custom_desc}\n"
-            "Таймкоды событий:\n"
+            "Черновик: {custom_desc}\n"
+            "Таймкоды событий (только для понимания сюжета):\n"
             "{timecodes}\n\n"
-            "ТВОЯ ЗАДАЧА:\n"
-            "1. Заголовки (5 вариантов):\n"
-            "   - Придумай 5 цепляющих, кликабельных названий для серии.\n"
-            "   - Название игры и номер серии внутрь НЕ пиши.\n"
-            "   - Длина каждого заголовка строго ДО {max_title_len} символов.\n\n"
-            "2. Описание:\n"
-            "   - Напиши бодрое SEO-описание для зрителей на основе заметок и таймкодов (2-4 абзаца).\n\n"
-            "3. Хештеги:\n"
-            "   - Подбери 5-8 релевантных тегов под события этой серии.\n"
-            "   - Базовые теги игры: {unique_tags}"
+            "ЗАДАЧА (выведи ответ строго 3 отдельными блоками, сами таймкоды в ответе НЕ выводи):\n\n"
+            "БЛОК 1 — Заголовки (5 вариантов):\n"
+            "  - Придумай 5 цепляющих, кликабельных названий по событиям серии.\n"
+            "  - Без названия игры и номера серии.\n"
+            "  - Длина каждого — строго ДО {max_title_len} символов.\n\n"
+            "БЛОК 2 — Описание:\n"
+            "  - Напиши бодрое SEO-описание для зрителей по сути серии (2-4 абзаца, сплошным текстом без таймкодов).\n\n"
+            "БЛОК 3 — Хештеги:\n"
+            "  - Сгенерируй 5-8 уникальных тегов строго под события этой серии.\n"
+            "  - НЕ используй и НЕ дублируй базовые теги игры (они уже прописаны в шаблоне): {unique_tags}"
         ),
     },
     "en_us": {
@@ -86,22 +85,21 @@ DEFAULT_TEMPLATES = {
         ),
         "shorts": "{game_desc}\n\n{block_links}\n\n{profile_cta}",
         "ai": (
-            "I run a YouTube gaming channel, publishing a let's play of \"{game_name}\".\n"
-            "This is episode #{ep_number}.\n\n"
+            "Game: \"{game_name}\", episode #{ep_number}.\n\n"
             "EPISODE CONTEXT:\n"
             "Draft notes: {custom_desc}\n"
-            "Timestamps:\n"
+            "Event timestamps (for context only):\n"
             "{timecodes}\n\n"
-            "YOUR TASK:\n"
-            "1. Titles (5 options):\n"
-            "   - Generate 5 catchy, click-worthy titles for this episode.\n"
-            "   - Do NOT include the game title or episode number.\n"
-            "   - Maximum title length: up to {max_title_len} characters.\n\n"
-            "2. Description:\n"
-            "   - Write an engaging SEO-optimized description based on my notes and timestamps (2-4 paragraphs).\n\n"
-            "3. Hashtags:\n"
-            "   - Generate 5-8 relevant tags for this specific episode.\n"
-            "   - Base game tags already in use: {unique_tags}"
+            "TASK (output strictly in 3 separate blocks, do NOT include timestamps in the output):\n\n"
+            "BLOCK 1 — Titles (5 options):\n"
+            "  - Generate 5 catchy, click-worthy titles based on the episode events.\n"
+            "  - Do NOT include the game title or episode number.\n"
+            "  - Strict maximum length: up to {max_title_len} characters each.\n\n"
+            "BLOCK 2 — Description:\n"
+            "  - Write an engaging SEO-optimized description based on the notes and events (2-4 paragraphs, plain text without timestamps).\n\n"
+            "BLOCK 3 — Hashtags:\n"
+            "  - Generate 5-8 unique tags strictly relevant to this episode's events.\n"
+            "  - Do NOT use or duplicate these base game tags (already in template): {unique_tags}"
         ),
     }
 }
