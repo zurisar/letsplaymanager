@@ -15,6 +15,7 @@ DEFAULT_TEMPLATES = {
             "{custom_title}    - Уникальное название серии\n"
             "{custom_desc}     - Описание серии\n"
             "{timecodes}       - Таймкоды серии\n"
+            "{default_tags}    - Базовые теги игры\n"
             "{unique_tags}     - Склеенные теги без дубликатов\n"
             "{max_title_len}   - Допустимая длина заголовка до лимита в 100 знаков\n"
             "{game_desc}       - Базовое описание игры (из БД)\n"
@@ -54,6 +55,23 @@ DEFAULT_TEMPLATES = {
             "  - Сгенерируй 5-8 уникальных тегов строго под события этой серии.\n"
             "  - НЕ используй и НЕ дублируй базовые теги игры (они уже прописаны в шаблоне): {unique_tags}"
         ),
+        "ai_game": (
+            "Привет! Я начинаю новое прохождение игры «{game_name}» на своём канале.\n"
+            "В этом чате мы будем оформлять выпуски этого летсплея (придумывать заголовки, "
+            "описания и теги к каждой серии).\n\n"
+            "ИСХОДНЫЕ ДАННЫЕ ПО ИГРЕ:\n"
+            "Черновик описания / аннотация: {game_desc}\n"
+            "Набросок тегов: {default_tags}\n\n"
+            "ЗАДАЧА ДЛЯ СТАРТА (выведи ответ строго 2 отдельными блоками):\n\n"
+            "БЛОК 1 — Базовое SEO-описание игры (пойдёт в шаблон под каждое видео):\n"
+            "  - На основе черновика (или своих знаний об игре «{game_name}», если черновик пустой) "
+            "напиши увлекательное, оптимизированное под поиск описание игры на 1-2 абзаца.\n"
+            "  - Текст должен быть универсальным, без привязки к конкретной серии.\n\n"
+            "БЛОК 2 — Базовые хештеги игры:\n"
+            "  - Сгенерируй 8-12 базовых хештегов по названию игры (на русском и английском), жанру и тематике.\n"
+            "  - Выведи их в одну строку через пробел с символом #.\n\n"
+            "После этого ответа мы будем работать над сериями по мере их выхода."
+        ),
     },
     "en_us": {
         "readme": (
@@ -63,6 +81,7 @@ DEFAULT_TEMPLATES = {
             "{custom_title}    - Custom episode title\n"
             "{custom_desc}     - Episode description\n"
             "{timecodes}       - Episode timecodes\n"
+            "{default_tags}    - Basic game tags\n"
             "{unique_tags}     - Combined tags without duplicates\n"
             "{max_title_len}   - Allowed title length up to 100 chars limit\n"
             "{game_desc}       - Base game description (from DB)\n"
@@ -101,6 +120,22 @@ DEFAULT_TEMPLATES = {
             "BLOCK 3 — Hashtags:\n"
             "  - Generate 5-8 unique tags strictly relevant to this episode's events.\n"
             "  - Do NOT use or duplicate these base game tags (already in template): {unique_tags}"
+        ),
+        "ai_game": (
+            "Hi! I'm starting a new Let's Play series for \"{game_name}\" on my channel.\n"
+            "In this chat, we will craft metadata (titles, SEO descriptions, and tags) for each episode.\n\n"
+            "INITIAL GAME DATA:\n"
+            "Draft description / synopsis: {game_desc}\n"
+            "Draft tags: {default_tags}\n\n"
+            "INITIAL TASK (output strictly in 2 separate blocks):\n\n"
+            "BLOCK 1 — Base SEO Game Description (used in the template under every video):\n"
+            "  - Based on the draft (or your knowledge of \"{game_name}\" if empty), "
+            "write an engaging, SEO-optimized game overview in 1-2 paragraphs.\n"
+            "  - Keep it universal so it fits any episode of the playthrough.\n\n"
+            "BLOCK 2 — Base Game Hashtags:\n"
+            "  - Generate 8-12 core hashtags covering the game title, genre, and theme.\n"
+            "  - Format them on a single line separated by spaces with the # symbol.\n\n"
+            "After this, wait for me to send context and timestamps for Episode 1."
         ),
     }
 }
@@ -141,6 +176,7 @@ class TemplateManager:
         self._write_template("publish_video.tpl", tpl_pack["video"], need_force_update)
         self._write_template("publish_shorts.tpl", tpl_pack["shorts"], need_force_update)
         self._write_template("ai_prompt.tpl", tpl_pack["ai"], need_force_update)
+        self._write_template("ai_game_init.tpl", tpl_pack["ai_game"], need_force_update)
 
         with open(version_marker, "w", encoding="utf-8") as f:
             f.write(APP_VERSION)

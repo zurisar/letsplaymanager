@@ -1,9 +1,10 @@
 import os
 import re
-from PyQt6.QtWidgets import (QDialog, QFormLayout, QLineEdit, QHBoxLayout, 
+from PyQt6.QtWidgets import (QApplication, QDialog, QFormLayout, QLineEdit, QHBoxLayout, 
                              QPushButton, QFileDialog, QTabWidget, QWidget, 
-                             QVBoxLayout, QLabel, QPlainTextEdit)
+                             QVBoxLayout, QLabel, QPlainTextEdit, QMessageBox)
 from core.config import _
+from core.templates import TemplateManager  # Проверь путь к templates.py
 
 class GameDialog(QDialog):
     def __init__(self, parent, config, game_name="", game_data=None):
@@ -14,7 +15,7 @@ class GameDialog(QDialog):
         
         title = f"{_('title_edit_action')}: {game_name}" if self.is_edit_mode else _("title_add_new_game")
         self.setWindowTitle(title)
-        self.resize(600, 450)
+        self.resize(600, 480)
         
         self.setup_ui(game_name)
 
@@ -56,7 +57,20 @@ class GameDialog(QDialog):
         meta_layout = QVBoxLayout(tab_meta)
         meta_layout.setContentsMargins(15, 15, 15, 15)
         
-        meta_layout.addWidget(QLabel(_("lbl_desc_basic_game")))
+        # Шапка описания + кнопка генерации стартового ИИ-промпта
+        desc_header_layout = QHBoxLayout()
+        desc_header_layout.addWidget(QLabel(_("lbl_desc_basic_game")))
+        desc_header_layout.addStretch()
+        
+        self.ai_init_btn = QPushButton(f"🤖 {_('btn_copy_ai_game_prompt', 'Промпт для нового ИИ-чата')}")
+        self.ai_init_btn.setToolTip(_(
+            "tooltip_ai_game_prompt", 
+            "Скопировать стартовый промпт для ИИ (оптимизация описания игры под SEO + подбор базовых тегов)"
+        ))
+        self.ai_init_btn.clicked.connect(self.copy_ai_game_prompt)
+        desc_header_layout.addWidget(self.ai_init_btn)
+        meta_layout.addLayout(desc_header_layout)
+        
         self.desc_template_input = QPlainTextEdit()
         self.desc_template_input.setPlainText(self.game_data.get('desc_template', ''))
         self.desc_template_input.setPlaceholderText("В этой игре мы пытаемся выжить в суровом мире...\n{episode_desc}")
@@ -104,6 +118,35 @@ class GameDialog(QDialog):
         btn_layout.addWidget(cancel_btn)
         main_layout.addLayout(btn_layout)
 
+    def copy_ai_game_prompt(self):
+        game_name = self.name_input.text().strip()
+        if not game_name:
+            QMessageBox.warning(
+                self, 
+                _("msg_title_error"), 
+                _("msg_enter_game_name_first", "Сначала укажите название игры на первой вкладке!")
+            )
+            self.tabs.setCurrentIndex(0)
+            self.name_input.setFocus()
+            return
+
+        draft_desc = self.desc_template_input.toPlainText().strip() or "(не указано — опиши игру самостоятельно)"
+        draft_tags = self.tags_input.text().strip() or "(не указаны)"
+
+        tpl_manager = TemplateManager(self.config)
+        prompt_text = tpl_manager.render("ai_game_init.tpl", {
+            "game_name": game_name,
+            "game_desc": draft_desc,
+            "default_tags": draft_tags,
+        })
+
+        QApplication.clipboard().setText(prompt_text)
+        QMessageBox.information(
+            self, 
+            _("msg_title_success"), 
+            _("msg_ai_game_prompt_copied", "Стартовый промпт для игры скопирован в буфер обмена!")
+        )
+
     def browse_folder(self):
         start_dir = self.config.get("renders_folder", "")
         folder = QFileDialog.getExistingDirectory(self, _("dlg_game_select_game_folder"), start_dir)
@@ -133,7 +176,7 @@ class GameDialog(QDialog):
             "steam_id": self.steam_input.text().strip(),
             "desc_template": self.desc_template_input.toPlainText().strip(),
             "default_tags": self.tags_input.text().strip(),
-            "playlists": playlists # <--- Передаем собранный словарь
+            "playlists": playlists
         }
         if not self.is_edit_mode:
             data["folder"] = self.folder_input.text().strip()
