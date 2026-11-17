@@ -499,7 +499,7 @@ def get_all_episodes_for_schedule():
             SELECT e.id, g.name, g.folder_path, e.number, e.title, e.publish_date
             FROM episodes e
             JOIN games g ON e.game_id = g.id
-            WHERE e.sources_deleted = 0 AND g.is_archived = 0
+            WHERE e.sources_deleted = 0
         ''')
         return cursor.fetchall()
     
@@ -511,7 +511,7 @@ def get_all_shorts_for_schedule():
             FROM shorts s
             JOIN episodes e ON s.episode_id = e.id
             JOIN games g ON e.game_id = g.id
-            WHERE e.sources_deleted = 0 AND g.is_archived = 0
+            WHERE e.sources_deleted = 0
         ''')
         return cursor.fetchall()
     
