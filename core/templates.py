@@ -1,8 +1,9 @@
 import os
 import logging
 from database import APP_DATA_DIR
+from core.config import APP_VERSION
 
-TEMPLATES_VERSION = "0.8"
+# TEMPLATES_VERSION = "0.8" - deprecated
 
 # Словари дефолтов под языки
 DEFAULT_TEMPLATES = {
@@ -125,18 +126,16 @@ class TemplateManager:
             with open(version_marker, "r", encoding="utf-8") as f:
                 current_tpl_version = f.read().strip()
 
-        need_force_update = current_tpl_version < TEMPLATES_VERSION
+        # Неравенство вместо '<', чтобы не споткнуться о "0.10" vs "0.9"
+        need_force_update = current_tpl_version != APP_VERSION
         
-        # Забираем языковой пак или дефолтимся на en_us, если язык экзотический
         tpl_pack = DEFAULT_TEMPLATES.get(self.lang, DEFAULT_TEMPLATES["en_us"])
 
-        # 1. Справка
         readme_path = os.path.join(self.tpl_dir, "_README_VARIABLES.txt")
         if not os.path.exists(readme_path) or need_force_update:
             with open(readme_path, "w", encoding="utf-8") as f:
                 f.write(tpl_pack["readme"])
 
-        # 2. Блоки и шаблоны
         self._write_template("_timecodes.tpl", tpl_pack["timecodes"], need_force_update)
         self._write_template("_links.tpl", tpl_pack["links"], need_force_update)
         self._write_template("publish_video.tpl", tpl_pack["video"], need_force_update)
@@ -144,7 +143,7 @@ class TemplateManager:
         self._write_template("ai_prompt.tpl", tpl_pack["ai"], need_force_update)
 
         with open(version_marker, "w", encoding="utf-8") as f:
-            f.write(TEMPLATES_VERSION)
+            f.write(APP_VERSION)
 
     def _write_template(self, filename, default_content, force_update=False):
         filepath = os.path.join(self.tpl_dir, filename)
@@ -152,11 +151,10 @@ class TemplateManager:
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(default_content)
         elif force_update:
-            # Бекапим пользовательский файл, если он правился, и накатываем новый эталон
             bak_path = filepath + ".bak"
             try:
-                if not os.path.exists(bak_path):
-                    os.replace(filepath, bak_path)
+                # os.replace атомарно перезапишет старый .bak на всех ОС
+                os.replace(filepath, bak_path)
                 with open(filepath, "w", encoding="utf-8") as f:
                     f.write(default_content)
             except OSError as e:
