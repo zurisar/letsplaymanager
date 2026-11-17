@@ -18,7 +18,7 @@ from PyQt6.QtGui import (QColor, QAction, QIcon)
 
 # --- НАШИ МОДУЛИ ---
 from core.config import _, load_config, save_config, load_language, APP_VERSION, BASE_DIR, get_color, open_path
-from core.ffmpeg_worker import FFmpegWorker, get_tool_path
+from core.ffmpeg_worker import FFmpegWorker, FileMoveWorker, get_tool_path
 from core.update_checker import UpdateCheckerThread
 from core.profile_manager import ProfileManager
 from core.templates import TemplateManager
@@ -734,7 +734,6 @@ class LetsPlayManager(QMainWindow):
             self.progress_dialog.exec()
 
     def show_add_episode_dialog(self):
-        # Достаем список игр и текущую игру, чтобы передать в диалог
         games = get_games()
         current_index = self.game_selector.currentIndex()
         if current_index == -1:
@@ -744,40 +743,28 @@ class LetsPlayManager(QMainWindow):
         current_game_data = self.game_selector.itemData(current_index)
         current_game_id = current_game_data['id']
 
-        # Создаем и показываем наше окно
         dialog = AddEpisodeDialog(self, games, current_game_id, self.config)
         
-        # Если пользователь нажал "Добавить и Конвертировать"
         if dialog.exec() == QDialog.DialogCode.Accepted:
             input_file = dialog.file_input.text()
             if not input_file:
                 QMessageBox.warning(self, _("msg_title_error"), _("msg_no_source_file_selected"))
                 return
                 
-            # Собираем данные
             game_data = dialog.game_selector.itemData(dialog.game_selector.currentIndex())
             game_name = dialog.game_selector.currentText()
             ep_number = dialog.ep_spinbox.value()
             base_folder = game_data['path']
             
-            # Читаем индекс выбранного режима (0, 1 или 2)
+            # Читаем индекс выбранного режима (0 — только перемещение, 1 — ремукс, 2 — перекодирование)
             process_mode = dialog.process_mode_combo.currentIndex()
 
-            # Определяем исходное расширение
             ignored, ext = os.path.splitext(input_file)
-            ext_lower = ext.lower()
 
-            # --- АВТОМАТИЧЕСКАЯ ЗАЩИТА ---
-            # Если исходник MKV, а выбрано простое перемещение, принудительно ставим Remux
-            if ext_lower == '.mkv' and process_mode == 0:
-                process_mode = 1 
-            # ------------------------------
-            
-            # ПРИНУДИТЕЛЬНО МЕНЯЕМ РАСШИРЕНИЕ ДО ГЕНЕРАЦИИ ИМЕНИ ФАЙЛА
+            # Меняем расширение на .mp4 только если выбран ремукс или перекодирование
             if process_mode > 0:
                 ext = '.mp4'
             
-            # Формируем папку и выходной файл уже с правильным расширением (.mp4 или исходным)
             ep_folder = os.path.join(base_folder, f"ep{ep_number}")
             os.makedirs(ep_folder, exist_ok=True)
             
@@ -785,15 +772,11 @@ class LetsPlayManager(QMainWindow):
             output_file = os.path.join(ep_folder, out_filename)
 
             if process_mode > 0:
-                # Базовый Remux (смена контейнера на лету)
                 if process_mode == 1:
                     cmd = [get_tool_path('ffmpeg'), '-y', '-i', input_file, '-c', 'copy', output_file]
                 
                 elif process_mode == 2:
-                    # Читаем выбранный кодек из конфига (по умолчанию обычный процессорный H.264)
                     codec_choice = self.config.get("default_codec", "h264_cpu")
-                    
-                    # Словарь с настройками под каждый энкодер
                     encoders = {
                         "h264_cpu":   ['-c:v', 'libx264', '-preset', 'fast'],
                         "h264_nvenc": ['-c:v', 'h264_nvenc', '-preset', 'fast'],
@@ -801,11 +784,8 @@ class LetsPlayManager(QMainWindow):
                         "hevc_nvenc": ['-c:v', 'hevc_nvenc', '-preset', 'fast'],
                         "hevc_amf":   ['-c:v', 'hevc_amf', '-quality', 'speed']
                     }
-                    
-                    # Получаем нужные флаги (с fallback на базовый h264, если что-то пошло не так)
                     video_flags = encoders.get(codec_choice, encoders["h264_cpu"])
 
-                    # Собираем финальную команду
                     cmd = [get_tool_path('ffmpeg'), '-y', '-i', input_file]
                     cmd.extend(video_flags)
                     cmd.extend([
@@ -816,27 +796,23 @@ class LetsPlayManager(QMainWindow):
                     ])
 
                 self.worker = FFmpegWorker(cmd)
-                self.progress_dialog = ProgressDialog(self)
-                self.worker.progress.connect(self.progress_dialog.append_log)
-                self.worker.finished.connect(self.on_ffmpeg_finished)
-                
-                self.worker.start()
-                self.progress_dialog.exec()
             else:
-                # Только перемещение
                 norm_input = os.path.normpath(input_file)
                 norm_output = os.path.normpath(output_file)
                 
-                if norm_input != norm_output:
-                    try:
-                        shutil.move(norm_input, norm_output)
-                        QMessageBox.information(self, _("msg_title_success"), f"{_('lbl_video_convert_success')}\n{out_filename}")
-                    except Exception as e:
-                        QMessageBox.critical(self, _("msg_title_error"), f"{_('lbl_video_convert_error')}\n{e}")
-                else:
+                if norm_input == norm_output:
                     QMessageBox.information(self, _("msg_title_done"), _("lbl_video_convert_exist"))
+                    self.update_table()
+                    return
                 
-                self.update_table()
+                self.worker = FileMoveWorker(norm_input, norm_output)
+
+            self.progress_dialog = ProgressDialog(self)
+            self.worker.progress.connect(self.progress_dialog.append_log)
+            self.worker.finished.connect(self.on_ffmpeg_finished)
+            
+            self.worker.start()
+            self.progress_dialog.exec()
 
     def on_ffmpeg_finished(self, success, message):
         # Закрываем окно с логами, когда воркер закончил
