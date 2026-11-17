@@ -261,10 +261,9 @@ def get_episode_metadata(episode_id):
 def mark_episode_deleted(episode_id):
     with get_connection() as conn:
         cursor = conn.cursor()
-        # Сбрасываем publish_date = '', чтобы удаленный исходник не висел фантомом
         cursor.execute('''
             UPDATE episodes 
-            SET sources_deleted = 1, file_size = "0", duration = "0", publish_date = "" 
+            SET sources_deleted = 1, file_size = "0", duration = "0" 
             WHERE id = ?
         ''', (episode_id,))
 
@@ -494,32 +493,28 @@ def check_unpublished_shorts(game_id):
         return unpublished_shorts
 
 def get_all_episodes_for_schedule():
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT e.id, g.name, g.folder_path, e.number, e.title, e.publish_date
-        FROM episodes e
-        JOIN games g ON e.game_id = g.id
-        WHERE e.sources_deleted = 0
-    ''')
-    data = cursor.fetchall()
-    conn.close()
-    return data
-
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT e.id, g.name, g.folder_path, e.number, e.title, e.publish_date
+            FROM episodes e
+            JOIN games g ON e.game_id = g.id
+            WHERE e.sources_deleted = 0 AND g.is_archived = 0
+        ''')
+        return cursor.fetchall()
+    
 def get_all_shorts_for_schedule():
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    # Добавляем условие, чтобы шортсы удаленных эпизодов тоже не попадали в календарь
-    cursor.execute('''
-        SELECT s.id, g.name, e.number, s.number, s.custom_title, s.publish_date
-        FROM shorts s
-        JOIN episodes e ON s.episode_id = e.id
-        JOIN games g ON e.game_id = g.id
-    ''')
-    data = cursor.fetchall()
-    conn.close()
-    return data
-
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT s.id, g.name, e.number, s.number, s.custom_title, s.publish_date
+            FROM shorts s
+            JOIN episodes e ON s.episode_id = e.id
+            JOIN games g ON e.game_id = g.id
+            WHERE e.sources_deleted = 0 AND g.is_archived = 0
+        ''')
+        return cursor.fetchall()
+    
 def is_game_archived(game_id):
     """Проверяет, переведена ли игра в режим архива (исходники удалены, но игра оставлена)"""
     conn = sqlite3.connect(db_path)
